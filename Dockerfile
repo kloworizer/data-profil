@@ -41,7 +41,7 @@ COPY docker/entrypoint.sh /entrypoint.sh
 RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh && \
     useradd -m -u 1000 app && mkdir -p /data /input && chown -R app /data /input
 
-USER app
+# The entrypoint starts as root only to fix /data ownership, then runs everything as `app`.
 VOLUME ["/data", "/input"]
 EXPOSE 8000
 ENTRYPOINT ["/entrypoint.sh"]

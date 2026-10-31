@@ -68,6 +68,8 @@ else
   step "2/5 Reusing existing bundle in $BUNDLE"
 fi
 [ -f "$BUNDLE/app_image.tar.gz" ] || { echo "ERROR: $BUNDLE/app_image.tar.gz not found"; exit 1; }
+# always ship the current installer and compose files (also with --skip-build)
+cp scripts/install_offline.sh docker-compose.yml docker-compose.prod.yml "$BUNDLE/"
 
 FILES=("$BUNDLE/app_image.tar.gz" "$BUNDLE/bundle.env" "$BUNDLE/install_offline.sh" "$BUNDLE/docker-compose.yml" "$BUNDLE/docker-compose.prod.yml")
 if [ "$APP_ONLY" != "1" ]; then

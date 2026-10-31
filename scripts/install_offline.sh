@@ -18,7 +18,7 @@ sha256sum -c SHA256SUMS
 
 # only parts listed in SHA256SUMS belong to this delivery (an app-only update leaves
 # older Ollama files from the first install in place; they are not re-imported)
-sent() { grep -q " \./$1\$\| $1\$" SHA256SUMS; }
+sent() { grep -qE "[ *](\./)?$1\$" SHA256SUMS; }   # '*' = binary-mode marker (sha256sum on Windows)
 for f in app_image.tar.gz ollama_image.tar.gz; do
   if [ -f "$f" ] && sent "$f"; then echo "==> Loading $f"; $SUDO docker load -i "$f"; fi
 done
@@ -30,10 +30,9 @@ if [ -f ollama_models.tgz ] && sent ollama_models.tgz; then
     -c "mkdir -p /v/models && tar xzf /b/ollama_models.tgz -C /v/models"
 fi
 
-mkdir -p data input
-# the app container runs as uid 1000
-$SUDO chown -R 1000:1000 data 2>/dev/null || true
+mkdir -p data input   # the containers fix ownership of data/ themselves
 echo "==> Starting ($COMPOSE)"
 $SUDO docker compose -f "$COMPOSE" up -d --no-build --remove-orphans
 $SUDO docker compose -f "$COMPOSE" ps
-echo "==> Done. Open http://$(hostname -I 2>/dev/null | awk '{print $1}'):8000   (large files go in $PWD/input)"
+IP=$(hostname -I 2>/dev/null | awk '{print $1}' || true)
+echo "==> Done. Open http://${IP:-$(hostname)}:8000   (large files go in $PWD/input)"

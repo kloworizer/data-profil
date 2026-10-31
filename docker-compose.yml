@@ -13,6 +13,8 @@
 # Without Spark:  docker compose up -d autoeda ollama   (and pick the local engine)
 # Ollama already on the host? Remove the `ollama` service and set OLLAMA_HOST=http://host.docker.internal:11434
 
+name: autoeda   # fixed project name: same container / volume names wherever it is deployed
+
 x-autoeda-image: &image
   image: autoeda:poc
   build:

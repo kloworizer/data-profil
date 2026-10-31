@@ -11,6 +11,8 @@
 #     Easiest on an air-gapped standalone cluster: run this same image as the Spark workers
 #     (see the commented `spark-worker` service), so versions match exactly.
 #   * run the same Spark version as PYSPARK_VERSION used to build the image (default 3.5.3).
+name: autoeda   # fixed project name: same container / volume names wherever it is deployed
+
 services:
   autoeda:
     image: autoeda:poc
