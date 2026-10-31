@@ -1,8 +1,19 @@
 # AutoEDA — no-code automated EDA (PoC)
 
 Drop in any data file and get a self-contained HTML report describing **every column**:
-type and meaning, distribution, top values, formats, and data-quality issues. A local
-Ollama LLM adds plain-language descriptions and an executive summary.
+type and meaning, distribution, top values, formats, and data-quality issues. Made for
+non-technical users:
+
+* **English and Bahasa Indonesia** throughout the app and the report (instant switch; both
+  languages are inside every downloaded report), with a **guided help tour** in each.
+* **Inverted-pyramid report**: a verdict ("Usable after a few fixes"), the single most important problem
+  and the key findings, each with *why it matters* and *what to do*, come first. The facts, the remaining
+  checks and the per-column cards (problem columns first) follow. Technical background is at the bottom.
+* A local **Ollama** model writes plain-language descriptions and a summary, and **reviews values for
+  anomalies** rules can't catch: the same thing spelled differently (`Jkt` / `DKI Jakarta` → `Jakarta`),
+  hidden "no data" values (`xxx`, `belum diisi`), values that don't belong in a column, names for
+  columns without a header, and a second opinion on hard-to-repair rows. AI findings are checked against
+  the real values and always labeled AI.
 
 * **Formats**: CSV / TSV / TXT / DAT / fixed-width (also `.gz`), Excel `.xlsx .xlsm .xlsb .xls`,
   `.ods`, PDF (ruled and borderless tables, text layer, optional OCR), JSON / NDJSON,
@@ -59,17 +70,30 @@ Nothing downloads at runtime. The report and UI embed all CSS/JS, DuckDB extensi
 (auto-install is disabled), the LLM is the local Ollama, and Spark executors need only the Python standard library.
 Verified by running every supported format, plus the Spark engine, inside the container with `--network none`.
 
-1. On a machine **with** internet (this laptop works: Git Bash + Docker Desktop):
-   ```bash
-   MODELS="qwen3.5:2b" PYSPARK_VERSION=3.5.3 scripts/offline_bundle.sh offline_bundle
-   # reuse models already pulled on the host instead of downloading them again:
-   OLLAMA_MODELS_DIR="$USERPROFILE/.ollama/models" scripts/offline_bundle.sh offline_bundle
-   ```
-   This produces `images.tar.gz` (app + Ollama images), `ollama_models.tgz`, the compose files, `install_offline.sh` and `SHA256SUMS`.
-2. Copy the folder to the server (USB / transfer zone) and run `./install_offline.sh docker-compose.prod.yml`.
-   It verifies checksums, `docker load`s the images, preloads the models into the `autoeda_ollama` volume and starts the stack with `--no-build`.
-3. Spark: set `PYSPARK_VERSION` to the cluster's Spark version when building the bundle. Executors only need
-   Python 3.12. Simplest is to run the same image as the Spark workers (see the commented service in `docker-compose.prod.yml`).
+**One command from your PC (Git Bash on Windows), over SSH/SCP.** The server needs only Docker and the compose plugin:
+
+```bash
+# first install: app image + Ollama image + AI models (reuses the models already on this PC)
+OLLAMA_MODELS_DIR="$USERPROFILE/.ollama/models" scripts/deploy_airgap.sh user@server --dir /opt/autoeda
+
+# later updates: only the new app image (~600 MB instead of several GB)
+scripts/deploy_airgap.sh user@server --dir /opt/autoeda --app-only
+```
+
+It checks the server (Docker present, free disk), builds the bundle on this PC, copies it over
+(`rsync` with resume when available, otherwise `scp`), verifies checksums on the server, loads the
+images, preloads the models and starts the stack, then runs a health check. Options: `--port`,
+`--key ~/.ssh/id_ed25519`, `--sudo` (docker needs sudo on the server), `--compose docker-compose.prod.yml`,
+`--skip-build` (resend an existing bundle). Set up SSH key login first (`ssh-keygen`, then add the
+`.pub` file to `~/.ssh/authorized_keys` on the server) to avoid repeated password prompts.
+
+Manual alternative (USB or a transfer zone): `scripts/offline_bundle.sh offline_bundle`, copy the folder,
+then on the server run `./install_offline.sh [docker-compose.prod.yml]`.
+
+Spark: set `PYSPARK_VERSION` to the cluster's Spark version when building. Executors only need
+Python 3.12. Simplest is to run the same image as the Spark workers (see the commented service in
+`docker-compose.prod.yml`). The image trusts the root CAs in `certs/` (on this PoC laptop, Avast's);
+remove them before building a production bundle if your policy requires it.
 
 ## Large files (tens of GB)
 
@@ -174,6 +198,7 @@ Dockerfile docker/entrypoint.sh    one image: web | spark-master | spark-worker
 docker-compose.yml                 local PoC stack (app, Ollama, Spark master + worker)
 docker-compose.prod.yml            air-gapped production sketch
 certs/                             extra root CAs for HTTPS-inspecting networks
+scripts/deploy_airgap.sh           build + send + install over SSH/SCP in one command
 scripts/offline_bundle.sh          build the air-gap bundle (internet side)
 scripts/install_offline.sh         install from the bundle (air-gapped side)
 autoeda/
@@ -187,7 +212,10 @@ autoeda/
     excel.py pdf.py others.py sink.py
   profiling.py      DuckDB column profiler (type inference, stats, anomaly flags)
   spark_engine.py   Spark ingest + profiler (same output)
-  llm.py narrative.py report.py templates/
+  llm.py            Ollama client, column descriptions, summary (EN / ID)
+  llm_anomaly.py    AI anomaly review (variants, placeholders, misfits, names, ambiguous rows)
+  i18n.py           English / Indonesian texts, advice per problem, locale number format
+  narrative.py report.py templates/   plain-language narrative, bilingual report and web UI
 ```
 
 ## Known PoC limits

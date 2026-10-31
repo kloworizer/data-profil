@@ -162,7 +162,8 @@ def grid_to_table(rows: Iterable[list], out: Path, name: str, log: RepairLog, so
     nn = [_nn(r) for r in head]
     maxnn = max(nn)
     hdr = next((i for i, r in enumerate(head) if nn[i] >= max(2, 0.5 * maxnn) and _texty(r) >= 0.6 and not _is_title(r)
-                and not looks_like_data(r, [x for x in head[i + 1:] if _nn(x) >= 2])),
+                and not looks_like_data(r, [x for j, x in enumerate(head[i + 1:]) if _nn(x) >= 2
+                                            and not (j < 2 and _texty(x) >= 0.8)])),   # skip sub-header rows
                None)
     has_header = hdr is not None
     if hdr is None:

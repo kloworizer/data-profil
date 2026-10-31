@@ -39,8 +39,9 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-SSH_OPTS=(-p "$PORT" -o ServerAliveInterval=30)
-SCP_OPTS=(-P "$PORT" -o ServerAliveInterval=30)
+# accept-new: trust a server's key on first contact, refuse if a known key ever changes
+SSH_OPTS=(-p "$PORT" -o ServerAliveInterval=30 -o StrictHostKeyChecking=accept-new)
+SCP_OPTS=(-P "$PORT" -o ServerAliveInterval=30 -o StrictHostKeyChecking=accept-new)
 if [ -n "$KEY" ]; then SSH_OPTS+=(-i "$KEY"); SCP_OPTS+=(-i "$KEY"); fi
 # reuse one SSH connection (one password prompt) where supported; not on Windows SSH builds
 CTL="${TMPDIR:-/tmp}/autoeda-ssh-%r@%h-%p"
