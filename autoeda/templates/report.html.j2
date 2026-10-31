@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="{{ default_lang }}" data-lang="{{ default_lang }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Data Check Report</title>
+<style>
+:root {
+  --bg: #f5f6f8; --panel: #ffffff; --ink: #1c2330; --muted: #5b6475; --line: #e2e5eb;
+  --accent: #2563d9; --accent-soft: #e8effc; --bar: #4f86e8;
+  --good: #15803d; --good-soft: #e5f5ea; --fair: #b45309; --fair-soft: #fdf1e1; --bad: #c2410c; --bad-soft: #fde8df;
+  --info: #2563a8; --info-soft: #e7f0fa; --ai: #7c3aed; --ai-soft: #f1eafe; --code: #f0f2f5;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12151b; --panel: #1a1f27; --ink: #e7eaf0; --muted: #9aa3b3; --line: #2c333e;
+    --accent: #7aa7ff; --accent-soft: #1d2a44; --bar: #6f9cf0;
+    --good: #5fcf88; --good-soft: #15301f; --fair: #f0a24a; --fair-soft: #3a2a14; --bad: #fb8f63; --bad-soft: #3d1f14;
+    --info: #7fb4f0; --info-soft: #18293d; --ai: #b794f6; --ai-soft: #2a2140; --code: #232a35;
+  }
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+[data-lang="en"] .lang-id, [data-lang="id"] .lang-en { display: none !important; }
+header.top { background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 20; }
+.topbar { max-width: 1180px; margin: 0 auto; padding: 12px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.topbar h1 { font-size: 19px; margin: 0; flex: 1; min-width: 200px; }
+.topbar .file { color: var(--muted); font-size: 13px; font-weight: 400; display: block; }
+.btn { border: 1px solid var(--line); background: var(--panel); color: var(--ink); padding: 7px 14px; border-radius: 999px; cursor: pointer; font: inherit; font-size: 14px; }
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+.seg button { border: 0; background: transparent; color: var(--ink); padding: 7px 12px; cursor: pointer; font: inherit; font-size: 14px; }
+.seg button.on { background: var(--accent); color: #fff; }
+main { max-width: 1180px; margin: 0 auto; padding: 20px 16px 80px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px 22px; margin-bottom: 18px; }
+h2 { font-size: 20px; margin: 0 0 14px; }
+h3 { font-size: 16px; margin: 0 0 6px; }
+.sub { color: var(--muted); font-size: 13px; }
+.lead { border-width: 2px; border-color: var(--c, var(--line)); }
+.lead.good { --c: var(--good); } .lead.fair { --c: var(--fair); } .lead.bad { --c: var(--bad); }
+.verdict { display: flex; gap: 20px; align-items: center; }
+.headline { font-size: 25px; margin: 0 0 6px; line-height: 1.25; }
+.most { margin: 0; font-size: 16px; }
+.gauge.small .ring { width: 104px; height: 104px; margin-bottom: 4px; }
+.gauge.small .ring > div { width: 82px; height: 82px; }
+.gauge.small .num { font-size: 30px; }
+.summary { display: grid; grid-template-columns: 170px 1fr; gap: 22px; align-items: center; }
+.gauge { text-align: center; }
+.gauge .ring { width: 140px; height: 140px; border-radius: 50%; display: grid; place-items: center; margin: 0 auto 8px;
+  background: conic-gradient(var(--c) calc(var(--v) * 1%), var(--line) 0); }
+.gauge .ring > div { width: 112px; height: 112px; border-radius: 50%; background: var(--panel); display: grid; place-items: center; }
+.gauge .num { font-size: 34px; font-weight: 700; line-height: 1; }
+.gauge .lbl { font-weight: 600; color: var(--c); }
+.facts { list-style: none; padding: 0; margin: 0; }
+.facts li { padding: 6px 0 6px 30px; position: relative; }
+.facts li::before { content: attr(data-i); position: absolute; left: 0; top: 5px; }
+.ai-box { border: 1px solid var(--ai); background: var(--ai-soft); border-radius: 12px; padding: 14px 16px; margin-top: 16px; }
+.ai-box h3 { color: var(--ai); }
+.ai-box ul { margin: 4px 0 10px 18px; padding: 0; }
+.tag { display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.tag.warn { background: var(--bad-soft); color: var(--bad); }
+.tag.info { background: var(--info-soft); color: var(--info); }
+.tag.ai { background: var(--ai-soft); color: var(--ai); }
+.tag.type { background: var(--accent-soft); color: var(--accent); }
+.tag.good { background: var(--good-soft); color: var(--good); }
+.issue { border: 1px solid var(--line); border-left: 4px solid var(--info); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+.issue.warn { border-left-color: var(--bad); }
+.issue .head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 4px; }
+.issue .head b { font-size: 15px; }
+.issue .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; font-size: 14px; }
+.issue .grid div span { display: block; font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
+.ex { font-size: 13px; color: var(--muted); margin-top: 6px; }
+code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 12.5px; background: var(--code); padding: 1px 5px; border-radius: 4px; word-break: break-word; }
+details > summary { cursor: pointer; color: var(--accent); font-size: 14px; }
+details[open] > summary { margin-bottom: 8px; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 14px; }
+th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.scroll { overflow-x: auto; }
+.toolbar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+.toolbar input, .toolbar select { padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--ink); font: inherit; min-width: 220px; }
+.cols { display: grid; grid-template-columns: repeat(auto-fill, minmax(520px, 1fr)); gap: 16px; }
+.col { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; scroll-margin-top: 80px; }
+.col.flash { outline: 3px solid var(--accent); }
+.col-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; flex-wrap: wrap; }
+.col-head h3 { font-size: 17px; margin: 0; word-break: break-word; }
+.say { margin: 8px 0; }
+.say.ai { border-left: 3px solid var(--ai); background: var(--ai-soft); padding: 6px 10px; border-radius: 0 8px 8px 0; }
+.say .src { display: block; font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.say.ai .src { color: var(--ai); }
+.mini { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0; }
+.mini div { background: var(--bg); border-radius: 10px; padding: 8px 10px; }
+.mini b { display: block; font-size: 17px; }
+.mini span { font-size: 12px; color: var(--muted); }
+.fill { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin-top: 4px; }
+.fill i { display: block; height: 6px; background: var(--good); }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.kv td { padding: 4px 6px; border: 0; font-size: 14px; }
+.kv td:first-child { color: var(--muted); }
+svg.hist { width: 100%; height: 110px; display: block; }
+svg.hist rect { fill: var(--bar); }
+svg.hist rect:hover { fill: var(--accent); }
+svg.hist .axis { fill: var(--muted); font-size: 11px; }
+.bars .r { display: grid; grid-template-columns: minmax(0, 40%) 1fr 54px; gap: 8px; align-items: center; font-size: 13px; padding: 2px 0; }
+.bars .l { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bars .t { background: var(--code); border-radius: 4px; height: 10px; }
+.bars .t i { display: block; background: var(--bar); height: 10px; border-radius: 4px; }
+.bars .n { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+.cissue { font-size: 14px; margin: 6px 0; padding-left: 4px; }
+.cissue .todo { color: var(--muted); font-size: 13px; display: block; margin-left: 4px; }
+.agree { color: var(--good); font-weight: 600; } .differ { color: var(--fair); font-weight: 600; }
+a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
+footer { color: var(--muted); font-size: 13px; text-align: center; padding: 10px; }
+/* guided tour */
+#tour-back { position: fixed; inset: 0; z-index: 90; display: none; }
+#tour-spot { position: fixed; z-index: 91; border-radius: 14px; box-shadow: 0 0 0 9999px rgba(10, 14, 22, .62); transition: all .25s ease; pointer-events: none; }
+#tour-card { position: fixed; z-index: 92; width: min(380px, calc(100vw - 32px)); background: var(--panel); color: var(--ink); border-radius: 14px; padding: 18px; box-shadow: 0 12px 40px rgba(0,0,0,.3); transition: top .25s ease, left .25s ease; }
+#tour-card h3 { margin: 0 0 6px; font-size: 17px; }
+#tour-card .row { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; gap: 8px; }
+#tour-card .dots { color: var(--muted); font-size: 13px; }
+@media (max-width: 760px) {
+  .verdict { flex-direction: column; text-align: center; }
+  .summary, .two, .issue .grid { grid-template-columns: 1fr; }
+  .cols { grid-template-columns: 1fr; }
+  .mini { grid-template-columns: 1fr 1fr; }
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="topbar">
+    <h1><span class="lang-en">{{ UI.en.report_title }}</span><span class="lang-id">{{ UI.id.report_title }}</span>
+      <span class="file">{{ r.file.name }} · {{ r.file.size | bytes }} · {{ now }}</span></h1>
+    <div class="seg" id="tour-lang-btns">
+      {% for l in langs %}<button data-setlang="{{ l }}">{{ 'English' if l == 'en' else 'Indonesia' }}</button>{% endfor %}
+    </div>
+    <button class="btn primary" onclick="tourStart()"><span class="lang-en">❓ {{ UI.en.help }}</span><span class="lang-id">❓ {{ UI.id.help }}</span></button>
+  </div>
+</header>
+
+{% macro issue_card(i, ti, lang) %}{% set U = UI[lang] %}
+  <div class="issue {{ i.level }}">
+    <div class="head">
+      <span class="tag {{ i.level }}">{{ '⚠' if i.level == 'warn' else 'ℹ' }} {{ i.title }}</span>
+      {% if i.ai %}<span class="tag ai">🤖 {{ U.ai_label }}</span>{% endif %}
+      {% if i.col %}<a href="#c{{ ti }}_{{ i.idx }}-{{ lang }}" onclick="flash(this)"><b>{{ U.column }}: {{ i.col }}</b></a>{% endif %}
+    </div>
+    <div>{{ i.text }}</div>
+    {% if i.ex %}<div class="ex">{{ U.examples }}: {% for e in i.ex[:3] %}<code>{{ e[0] }}</code>{% if e[1] is string %} → <code>{{ e[1] }}</code>{% elif e[1] is number %} ×{{ e[1] | num(lang) }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</div>{% endif %}
+    <div class="grid"><div><span>{{ U.why }}</span>{{ i.why }}</div><div><span>{{ U.todo }}</span>{{ i.todo }}</div></div>
+  </div>
+{% endmacro %}
+
+{% macro page(lang) %}{% set U = UI[lang] %}
+<main class="lang-{{ lang }}" id="top-{{ lang }}">
+{% if r.tables | length > 1 %}
+<section class="card">
+  <h2>{{ U.tables_found.format(n=r.tables|length) }}</h2>
+  <ul>{% for t in r.tables %}<li><a href="#t{{ loop.index0 }}-{{ lang }}">{{ t.name }}</a> — {{ t.n_rows | num(lang) }} {{ U.rows }}, {{ t.n_cols }} {{ U.cols }}</li>{% endfor %}</ul>
+</section>
+{% endif %}
+
+{% for t in r.tables %}{% set ti = loop.index0 %}{% set v = views[lang][ti] %}{% set sc, lvl = v.score %}
+{% set top = v.issues | selectattr('level', 'equalto', 'warn') | list %}
+<section class="card lead {{ lvl }}" {% if ti == 0 %}id="tour-summary-{{ lang }}"{% endif %}>
+  <span id="t{{ ti }}-{{ lang }}"></span>
+  {% if r.tables | length > 1 %}<div class="sub">{{ U.table }}: <b>{{ t.name }}</b></div>{% endif %}
+  <div class="verdict">
+    <div class="gauge small" style="--v: {{ sc }}; --c: var(--{{ lvl }})" title="{{ U.score_hint }}">
+      <div class="ring"><div><div class="num">{{ sc }}</div></div></div>
+      <div class="lbl">{{ U['score_' ~ lvl] }}</div>
+    </div>
+    <div>
+      <h2 class="headline">{{ U['verdict_' ~ lvl] }}</h2>
+      {% if top %}<p class="most"><b>{{ U.most_important }}:</b> {% if top[0].col %}<a href="#c{{ ti }}_{{ top[0].idx }}-{{ lang }}" onclick="flash(this)">{{ top[0].col }}</a> — {% endif %}{{ top[0].text }}</p>{% endif %}
+      <p class="sub" style="margin:4px 0 0">{{ U.fact_size.format(rows=t.n_rows | num(lang), cols=t.n_cols) }} {{ U.score }}: {{ sc }}/100.</p>
+    </div>
+  </div>
+  {% if top %}
+  <h3 style="margin-top:16px">{{ U.key_findings }}</h3>
+  {% for i in top[:3] %}{{ issue_card(i, ti, lang) }}{% endfor %}
+  {% else %}<p>{{ U.check_none }}</p>{% endif %}
+</section>
+
+<section class="card">
+  <h2>📋 {{ U.facts_title }}</h2>
+  <ul class="facts">
+    <li data-i="📋">{{ U.fact_size.format(rows=t.n_rows | num(lang), cols=t.n_cols) }}</li>
+    <li data-i="{{ '⚠️' if v.warn_cols else '✅' }}">{% if v.warn_cols %}{{ U.fact_attention.format(n=v.warn_cols) }}{% else %}{{ U.fact_ok }}{% endif %}</li>
+    <li data-i="⬜">{{ U.fact_missing.format(pct=(t.missing_cells_pct | round(1) | num(lang)) ~ '%') }}</li>
+    <li data-i="👯">{% if t.duplicates and t.duplicates.count %}{{ U.fact_dups.format(n=t.duplicates.count | num(lang)) }}{% else %}{{ U.fact_nodups }}{% endif %}</li>
+    <li data-i="🔧">{% if t.repairs.total %}{{ U.fact_repairs.format(n=t.repairs.total | num(lang)) }}{% else %}{{ U.fact_norepairs }}{% endif %}</li>
+    {% if t.approximate %}<li data-i="📐">{{ U.approx }}</li>{% endif %}
+  </ul>
+  {% if t.summary %}
+  <div class="ai-box">
+    <h3>🤖 {{ U.ai_summary }}</h3>
+    <p style="margin:4px 0 8px">{{ t.summary.about }}</p>
+    {% if t.summary.observations %}<b>{{ U.ai_obs }}</b><ul>{% for o in t.summary.observations %}<li>{{ o }}</li>{% endfor %}</ul>{% endif %}
+    <div class="sub">{{ U.ai_note }}</div>
+  </div>
+  {% endif %}
+</section>
+
+{% set rest = v.issues | reject('in', top[:3]) | list %}
+{% if rest %}
+<section class="card" {% if ti == 0 %}id="tour-check-{{ lang }}"{% endif %}>
+  <h2>🔍 {{ U.more_checks }}</h2>
+  {% for i in rest[:15] %}{{ issue_card(i, ti, lang) }}{% endfor %}
+  {% if rest | length > 15 %}<p class="sub">+ {{ rest | length - 15 }} … ({{ U.columns_title }})</p>{% endif %}
+</section>
+{% elif ti == 0 %}<span id="tour-check-{{ lang }}"></span>{% endif %}
+
+<section {% if ti == 0 %}id="tour-columns-{{ lang }}"{% endif %}>
+  <h2 style="margin:24px 0 12px">📊 {{ U.columns_title }}</h2>
+  <div class="toolbar">
+    <input type="search" placeholder="{{ U.filter }}" oninput="filterCols(this, '{{ ti }}-{{ lang }}')">
+    <select onchange="filterCols(this, '{{ ti }}-{{ lang }}')">
+      <option value="">{{ U.all_types }}</option>
+      {% for k in t.type_counts %}<option value="{{ k }}">{{ type_label(k, lang) }}</option>{% endfor %}
+      <option value="__issue">{{ U.only_issues }}</option>
+    </select>
+    <select onchange="sortCols(this, '{{ ti }}-{{ lang }}')">
+      <option value="imp">{{ U.sort_importance }}</option><option value="file">{{ U.sort_file }}</option>
+    </select>
+  </div>
+  <div class="cols" id="cols-{{ ti }}-{{ lang }}">
+  {% for c in v.order %}{% set filled = c.count - c.missing %}
+  <article class="col" id="c{{ ti }}_{{ c.index }}-{{ lang }}" data-name="{{ c.name | lower }}" data-type="{{ c.inferred_type }}" data-issue="{{ 1 if c.flags else 0 }}" data-idx="{{ c.index }}" data-imp="{{ loop.index0 }}">
+    <div class="col-head">
+      <div><h3>{{ c.name }}</h3>{% if c.ai_name %}<div class="sub">🤖 {{ U.ai_suggests }}: <b>{{ c.ai_name }}</b></div>{% endif %}</div>
+      <div><span class="tag type">{{ type_label(c.inferred_type, lang) }}</span>{% if c.semantic %} <span class="tag info">{{ sem_label(c.semantic, lang) }}</span>{% endif %}</div>
+    </div>
+    <div class="say"><span class="src">{{ U.what_is }}</span>{% for m in c.narrative %}{{ m | tr(lang) }} {% endfor %}</div>
+    {% if c.llm %}<div class="say ai"><span class="src">🤖 {{ U.ai_desc }}</span>{{ c.llm }}</div>{% endif %}
+    <div class="mini">
+      <div><b>{{ (100 * filled / (c.count or 1)) | round(1) | num(lang) }}%</b><span>{{ U.filled }}</span><div class="fill"><i style="width:{{ 100 * filled / (c.count or 1) }}%"></i></div></div>
+      <div><b>{{ c.missing | num(lang) }}</b><span>{{ U.empty }}</span></div>
+      <div><b>{{ c.distinct | num(lang) }}</b><span>{{ U.different }}</span></div>
+    </div>
+    <div class="two">
+      <div>
+        <table class="kv">
+        {% if c.numeric %}{% set n = c.numeric %}
+          <tr><td>{{ U.min }}</td><td class="num">{{ n.min | num(lang) }}</td></tr>
+          <tr><td>{{ U.max }}</td><td class="num">{{ n.max | num(lang) }}</td></tr>
+          <tr><td>{{ U.avg }}</td><td class="num">{{ n.mean | num(lang) }}</td></tr>
+          <tr><td>{{ U.median }}</td><td class="num">{{ n.median | num(lang) }}</td></tr>
+          <tr><td>{{ U.typical }}</td><td class="num">{{ n.q1 | num(lang) }} – {{ n.q3 | num(lang) }}</td></tr>
+          <tr><td>{{ U.total }}</td><td class="num">{{ n.sum | num(lang) }}</td></tr>
+        {% elif c.datetime %}{% set d = c.datetime %}
+          <tr><td>{{ U.earliest }}</td><td class="num">{{ d.min[:16] }}</td></tr>
+          <tr><td>{{ U.latest }}</td><td class="num">{{ d.max[:16] }}</td></tr>
+          <tr><td>{{ U.span }}</td><td class="num">{{ d.span_days | num(lang) }} {{ U.days }}</td></tr>
+        {% elif c.boolean %}
+          <tr><td>{{ U.yes }}</td><td class="num">{{ c.boolean.true | num(lang) }}</td></tr>
+          <tr><td>{{ U.no }}</td><td class="num">{{ c.boolean.false | num(lang) }}</td></tr>
+        {% elif c.text %}
+          <tr><td>{{ U.length }}</td><td class="num">{{ c.text.len_min | num(lang) }} – {{ c.text.len_max | num(lang) }}</td></tr>
+        {% endif %}
+        </table>
+      </div>
+      <div>
+        {% if c.histogram and c.histogram.kind in ('numeric', 'date') %}
+          <div class="sub">{{ U.distribution }}</div>{{ c.histogram.bins | svg(420, 110, lang) }}
+          {% if c.datetime and c.datetime.weekday %}<div class="sub" style="margin-top:4px">{{ U.by_weekday }}</div>{{ c.datetime.weekday | svg(420, 44, lang) }}{% endif %}
+        {% endif %}
+        {% if c.top_values %}
+          <div class="sub" style="margin-top:4px">{{ U.top_values }}{% if c.top_approx %} {{ U.from_sample }}{% endif %}</div>
+          <div class="bars">{% set mx = c.top_values[0][2] or 1 %}
+          {% for val, k, pc in c.top_values[:8] %}
+            <div class="r"><span class="l" title="{{ val }}">{{ val }}</span><span class="t"><i style="width:{{ (100 * pc / mx) | round(1) }}%"></i></span><span class="n">{{ pc | round(1) | num(lang) }}%</span></div>
+          {% endfor %}</div>
+        {% endif %}
+      </div>
+    </div>
+    {% if c.flags %}
+    <div style="margin-top:10px"><b>{{ U.issues }}</b>
+      {% for f in c.flags %}{% set fi = flag_info(f.code, lang) %}
+      <div class="cissue"><span class="tag {{ f.level }}">{{ fi.title }}</span>{% if f.ai %} <span class="tag ai">🤖</span>{% endif %} {{ (f.m or f.msg) | tr(lang) }}
+        {% if f.examples %}<span class="ex">— {% for e in f.examples[:3] %}<code>{{ e[0] }}</code>{% if e[1] is string %} → <code>{{ e[1] }}</code>{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}
+        {% if fi.todo %}<span class="todo">👉 {{ fi.todo }}</span>{% endif %}</div>
+      {% endfor %}
+    </div>
+    {% else %}<div class="sub" style="margin-top:8px">✅ {{ U.no_issues }}</div>{% endif %}
+    <details style="margin-top:10px"><summary>{{ U.more }}</summary>
+      <table class="kv">
+        <tr><td>{{ U.physical }}</td><td><code>{{ c.physical_type }}</code></td></tr>
+        {% if c.numeric %}{% set n = c.numeric %}
+        <tr><td>{{ U.std }}</td><td class="num">{{ n.std | num(lang) }}</td></tr>
+        <tr><td>{{ U.pctiles }}</td><td class="num">{{ n.p1 | num(lang) }} / {{ n.p5 | num(lang) }} / {{ n.p95 | num(lang) }} / {{ n.p99 | num(lang) }}</td></tr>
+        <tr><td>{{ U.skewk }}</td><td class="num">{{ n.skew | num(lang) }} / {{ n.kurtosis | num(lang) }}</td></tr>
+        <tr><td>{{ U.zeros_neg }}</td><td class="num">{{ n.zeros | num(lang) }} / {{ n.negatives | num(lang) }}</td></tr>
+        <tr><td>{{ U.outliers }}</td><td class="num">{{ n.outliers | num(lang) }}</td></tr>
+        {% endif %}
+      </table>
+      {% if c.text and c.text.patterns %}<div class="sub" style="margin-top:6px">{{ U.formats }} ({{ U.formats_hint }})</div>
+        {% for pt, k, pc in c.text.patterns[:4] %}<div><code>{{ pt }}</code> <span class="sub">{{ pc | round(1) | num(lang) }}%</span></div>{% endfor %}{% endif %}
+      {% for n in c.notes %}<div class="sub">ℹ {{ n | tr(lang) }}</div>{% endfor %}
+    </details>
+  </article>
+  {% endfor %}
+  </div>
+</section>
+<h2 style="margin:28px 0 12px" class="sub">📎 {{ U.background }}</h2>
+<section class="card" {% if ti == 0 %}id="tour-fixes-{{ lang }}"{% endif %}>
+  <h2>🔧 {{ U.fixes_title }}</h2>
+  {% if t.repairs['items'] %}
+  <div class="scroll"><table>
+    {% for it in t.repairs['items'] %}
+    <tr><td>{{ repair_label(it.kind, lang) }}</td><td class="num">{{ it.count | num(lang) }}×</td><td>
+      {% if it.examples %}<details><summary>{{ U.show_examples }}</summary>
+      {% for e in it.examples %}<div style="margin:6px 0;font-size:13px">{% if e.line %}{{ U.line }} {{ e.line }}: {% endif %}{% if e.before %}<code>{{ e.before }}</code>{% endif %}{% if e.after %} → <code>{{ e.after }}</code>{% endif %}{% if e.detail and not e.before %}<span class="sub">{{ e.detail }}</span>{% endif %}</div>{% endfor %}
+      </details>{% endif %}
+    </td></tr>
+    {% endfor %}
+  </table></div>
+  {% else %}<p><span class="tag good">✓</span> {{ U.fixes_none }}</p>{% endif %}
+  {% if t.repairs.notes %}<details style="margin-top:10px"><summary>{{ U.tech_details }}</summary>
+    {% for n in t.repairs.notes %}<div class="sub">• {{ n | tr(lang) }}</div>{% endfor %}</details>{% endif %}
+  {% if t.ai_rows %}
+  <details style="margin-top:12px"><summary>🤖 {{ U.ai_rows }} ({{ t.ai_rows | length }})</summary>
+    <p class="sub">{{ U.ai_rows_hint }}</p>
+    <div class="scroll"><table>
+      <tr><th>{{ U.line }}</th><th>{{ U.auto_fix }}</th><th>{{ U.ai_fix }}</th><th></th></tr>
+      {% for a in t.ai_rows %}<tr><td>{{ a.line }}<div class="sub"><code>{{ a.raw }}</code></div></td>
+        <td><code>{{ a.chosen | join(' ⎮ ') }}</code></td><td><code>{{ a.ai | join(' ⎮ ') }}</code></td>
+        <td class="{{ 'agree' if a.agree else 'differ' }}">{{ U.agree if a.agree else U.differ }}</td></tr>{% endfor %}
+    </table></div>
+  </details>{% endif %}
+</section>
+
+{% if t.correlations %}
+<section class="card">
+  <h2>🔗 {{ U.correlations }}</h2>
+  <p class="sub">{{ U.corr_hint }}</p>
+  <table>{% for c in t.correlations[:8] %}<tr><td>{{ c.a }}</td><td>↔</td><td>{{ c.b }}</td><td class="num">{{ '+' if c.r > 0 else '' }}{{ c.r | round(2) | num(lang) }}</td></tr>{% endfor %}</table>
+</section>
+{% endif %}
+
+{% endfor %}
+
+<section class="card" style="margin-top:24px">
+  <details><summary>📖 {{ U.glossary }}</summary>
+    <ul>{% for k in ('g_row', 'g_col', 'g_median', 'g_dup', 'g_outlier') %}<li>{{ U[k] }}</li>{% endfor %}</ul>
+  </details>
+  {% if r.warnings %}<details style="margin-top:8px"><summary>{{ U.run_notes }}</summary>{% for w in r.warnings %}<div class="sub">• {{ w }}</div>{% endfor %}</details>{% endif %}
+</section>
+<footer>{{ U.engine }}: {{ r.engine }} · {{ U.duration }}: {{ r.elapsed_s | round(1) | num(lang) }} {{ U.seconds }}{% if r.llm.used %} · AI: {{ r.llm.model }}{% endif %} · <a href="#top-{{ lang }}">{{ U.back_top }} ↑</a></footer>
+</main>
+{% endmacro %}
+
+{% for l in langs %}{{ page(l) }}{% endfor %}
+
+<div id="tour-back"><div id="tour-spot"></div><div id="tour-card"><h3 id="tour-title"></h3><div id="tour-text"></div>
+  <div class="row"><span class="dots" id="tour-dots"></span><span>
+    <button class="btn" id="tour-prev"></button> <button class="btn primary" id="tour-next"></button></span></div></div></div>
+
+<script>
+var TOUR = {{ tour_json }}, BTN = {{ ui_json }}, step = 0;
+function lang() { return document.documentElement.getAttribute('data-lang'); }
+function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
+function setLang(l) {
+  document.documentElement.setAttribute('data-lang', l);
+  document.documentElement.lang = l;
+  document.querySelectorAll('[data-setlang]').forEach(function (b) { b.classList.toggle('on', b.dataset.setlang === l); });
+  store('autoeda-lang', l);
+  if (document.getElementById('tour-back').style.display === 'block') showStep();
+}
+document.querySelectorAll('[data-setlang]').forEach(function (b) { b.onclick = function () { setLang(b.dataset.setlang); }; });
+setLang(store('autoeda-lang') || document.documentElement.getAttribute('data-lang'));
+
+function filterCols(el, key) {
+  var box = document.getElementById('cols-' + key), bar = el.parentNode;
+  var q = bar.querySelector('input').value.toLowerCase(), t = bar.querySelector('select').value;
+  box.querySelectorAll('.col').forEach(function (c) {
+    var ok = c.dataset.name.indexOf(q) >= 0 && (!t || (t === '__issue' ? c.dataset.issue === '1' : c.dataset.type === t));
+    c.style.display = ok ? '' : 'none';
+  });
+}
+function sortCols(sel, key) {
+  var box = document.getElementById('cols-' + key), attr = sel.value === 'file' ? 'idx' : 'imp';
+  Array.prototype.slice.call(box.children).sort(function (a, b) { return a.dataset[attr] - b.dataset[attr]; })
+    .forEach(function (c) { box.appendChild(c); });
+}
+function flash(a) {
+  var el = document.querySelector(a.getAttribute('href'));
+  if (!el) return;
+  el.style.display = '';
+  el.classList.add('flash'); setTimeout(function () { el.classList.remove('flash'); }, 1800);
+}
+function target(sel) {
+  if (sel === '#tour-lang') return document.getElementById('tour-lang-btns');
+  return document.querySelector(sel + '-' + lang());
+}
+function showStep() {
+  var steps = TOUR[lang()], s = steps[step], el = target(s.sel);
+  document.getElementById('tour-title').textContent = s.title;
+  document.getElementById('tour-text').textContent = s.text;
+  document.getElementById('tour-dots').textContent = (step + 1) + ' / ' + steps.length;
+  document.getElementById('tour-prev').textContent = BTN[lang()].prev;
+  document.getElementById('tour-prev').style.visibility = step ? 'visible' : 'hidden';
+  document.getElementById('tour-next').textContent = step === steps.length - 1 ? BTN[lang()].done : BTN[lang()].next;
+  var spot = document.getElementById('tour-spot'), card = document.getElementById('tour-card');
+  if (!el) { spot.style.cssText = 'left:50%;top:40%;width:0;height:0'; card.style.left = '50%'; card.style.top = '40%'; return; }
+  el.scrollIntoView({ block: 'center', behavior: 'instant' in document.documentElement.style ? 'instant' : 'auto' });
+  setTimeout(function () {
+    var r = el.getBoundingClientRect(), pad = 8, h = Math.min(r.height, window.innerHeight * 0.6);
+    spot.style.left = (r.left - pad) + 'px'; spot.style.top = (r.top - pad) + 'px';
+    spot.style.width = (r.width + 2 * pad) + 'px'; spot.style.height = (h + 2 * pad) + 'px';
+    var cw = card.offsetWidth, ch = card.offsetHeight;
+    var top = r.top + h + 20 + ch < window.innerHeight ? r.top + h + 20 : Math.max(12, r.top - ch - 20);
+    card.style.top = top + 'px';
+    card.style.left = Math.min(Math.max(12, r.left), window.innerWidth - cw - 12) + 'px';
+  }, 60);
+}
+function tourStart() { step = 0; document.getElementById('tour-back').style.display = 'block'; showStep(); }
+function tourEnd() { document.getElementById('tour-back').style.display = 'none'; store('autoeda-report-tour', '1'); }
+document.getElementById('tour-next').onclick = function () { if (step < TOUR[lang()].length - 1) { step++; showStep(); } else tourEnd(); };
+document.getElementById('tour-prev').onclick = function () { if (step > 0) { step--; showStep(); } };
+document.getElementById('tour-back').addEventListener('click', function (e) { if (e.target.id === 'tour-back') tourEnd(); });
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape') tourEnd(); });
+window.addEventListener('resize', function () { if (document.getElementById('tour-back').style.display === 'block') showStep(); });
+if (!store('autoeda-report-tour')) setTimeout(tourStart, 600);
+</script>
+</body>
+</html>

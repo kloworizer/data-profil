@@ -1,0 +1,26 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Runtime data: uploads, intermediate Parquet, Spark work files, reports, job state
+data/
+input/
+out/
+offline_bundle/
+
+# Large generated test data (regenerate with scripts/make_samples.py --big N)
+samples/big_*.csv
+
+# Machine-specific root certificates (each machine adds its own; see certs/README.md)
+certs/*.crt
+certs/*.pem
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

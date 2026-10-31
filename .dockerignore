@@ -1,0 +1,8 @@
+.venv
+data
+input
+out
+samples
+offline_bundle
+**/__pycache__
+*.pyc

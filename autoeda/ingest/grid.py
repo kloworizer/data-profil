@@ -1,0 +1,331 @@
+"""Turn a 2-D grid of cell values (Excel sheet, PDF table) into clean tables.
+
+Handles the layout anomalies typical of human-made spreadsheets and reports:
+  * several tables in one sheet (stacked with blank rows / side by side)
+  * title + notes above the table, footnotes / "Source:" lines below it
+  * multi-row (merged) headers up to 3 levels, wrapped header lines (PDF)
+  * empty spacer columns / rows anywhere
+  * total / subtotal rows inside the data ("Total", "Grand Total", "Jumlah")
+  * section label rows ("Region: West") -> turned into a `section` column
+  * wrapped rows where one record spans several lines (PDF)
+  * shifted rows (via RowRepairer)
+"""
+from __future__ import annotations
+
+import datetime as dt
+import re
+import unicodedata
+from pathlib import Path
+from typing import Iterable
+
+from ..models import RepairLog, Table, clean_header
+from .repair import PERIOD_RE, RowRepairer, learn_classes, looks_like_data, vclass
+
+HEAD_SCAN = 30
+TOTAL_RE = re.compile(r"^\s*(grand\s*-?\s*total|sub\s*-?\s*total|total(es|s)?|jumlah|sum|overall|totaal|gesamt)\b", re.I)
+NOTE_RE = re.compile(r"^\s*(source|sumber|note|notes|nb|catatan|keterangan|remark|footnote|disclaimer|\*|†|‡|\(\d+\)|\d+\)|"
+                     r"generated|printed|page\s+\d)", re.I)
+SECTION_RE = re.compile(r"(:\s*$|^(region|wilayah|area|kategori|category|group|kelompok|section|bagian|"
+                        r"divisi|division|dept|department|segment|cabang|branch|year|tahun|month|bulan)\b)", re.I)
+INVISIBLE_RE = re.compile("[​‌‍﻿­]")
+
+
+def cell_str(v) -> str:
+    if v is None:
+        return ""
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, float):
+        if v != v:  # NaN
+            return ""
+        return str(int(v)) if v.is_integer() and abs(v) < 1e15 else repr(v)
+    if isinstance(v, dt.datetime):
+        return v.date().isoformat() if v.time() == dt.time(0) else v.isoformat(sep=" ")
+    if isinstance(v, (dt.date, dt.time)):
+        return v.isoformat()
+    if isinstance(v, dt.timedelta):
+        return str(v)
+    return str(v).replace("\r\n", "\n")
+
+
+def norm_text(s: str) -> str:
+    """NFKC (ligatures, full-width digits) + drop zero-width chars; used for PDF text."""
+    return INVISIBLE_RE.sub("", unicodedata.normalize("NFKC", s))
+
+
+
+
+def _texty(row: list[str]) -> float:
+    """Share of filled cells that read as labels. Period names used as column
+    headers (2019, 2020-Q1, FY23) count as labels too."""
+    filled = [c.strip() for c in row if c.strip()]
+    if not filled:
+        return 0.0
+    labels = sum(1 for c in filled if vclass(c) == "T")
+    periods = sum(1 for c in filled if vclass(c) != "T" and PERIOD_RE.match(c))
+    if periods >= 2 and len(set(filled)) == len(filled):
+        labels += periods
+    return labels / len(filled)
+
+
+def _nn(row) -> int:
+    return sum(1 for c in row if c.strip())
+
+
+def _is_title(r) -> bool:
+    vals = {c.strip() for c in r if c.strip()}
+    return len(vals) == 1
+
+
+def _header_like(r) -> bool:
+    return _nn(r) >= 2 and _texty(r) >= 0.8 and not _is_title(r)
+
+
+# --- multi-table detection --------------------------------------------------------
+def find_blocks(grid: list[list[str]]) -> list[tuple[int, int, int, int]]:
+    """Split a materialised sheet into table blocks (r0, r1, c0, c1), inclusive."""
+    rows_nonblank = [i for i, r in enumerate(grid) if any(c.strip() for c in r)]
+    if not rows_nonblank:
+        return []
+    vsegs, start, prev = [], rows_nonblank[0], rows_nonblank[0]
+    for i in rows_nonblank[1:]:
+        gap = i - prev - 1
+        if gap >= 1 and _starts_new_table(grid, start, prev, i, gap):
+            vsegs.append((start, prev))
+            start = i
+        prev = i
+    vsegs.append((start, prev))
+
+    blocks = []
+    for r0, r1 in vsegs:
+        width = max(len(grid[r]) for r in range(r0, r1 + 1))
+        used = [c for c in range(width) if any(c < len(grid[r]) and grid[r][c].strip() for r in range(r0, r1 + 1))]
+        groups, cur = [], [used[0]]
+        for c in used[1:]:
+            if c - cur[-1] > 1:
+                groups.append(cur)
+                cur = [c]
+            else:
+                cur.append(c)
+        groups.append(cur)
+        # side-by-side tables only when every group is >=2 columns and starts with a header-like row
+        if len(groups) > 1 and all(len(g) >= 2 for g in groups) and all(
+                _group_has_header(grid, r0, r1, g[0], g[-1]) for g in groups):
+            blocks += [(r0, r1, g[0], g[-1]) for g in groups]
+        else:
+            blocks.append((r0, r1, used[0], used[-1]))
+    return blocks
+
+
+def _group_has_header(grid, r0, r1, c0, c1) -> bool:
+    for r in range(r0, min(r1 + 1, r0 + 6)):
+        sub = [grid[r][c] if c < len(grid[r]) else "" for c in range(c0, c1 + 1)]
+        if _nn(sub):
+            if _is_title(sub) and _nn(sub) == 1:
+                continue
+            return _header_like(sub)
+    return False
+
+
+def _starts_new_table(grid, start, prev, i, gap) -> bool:
+    cand = grid[i]
+    look = i
+    if _nn(cand) == 1 and _texty(cand) == 1.0:     # a title line, header expected right after
+        nxt = next((j for j in range(i + 1, min(i + 4, len(grid))) if _nn(grid[j])), None)
+        if nxt is None:
+            return False
+        cand, look = grid[nxt], nxt
+    if not _header_like(cand):
+        return False
+    if gap >= 2:
+        return True
+    body = [r for r in grid[max(start, prev - 50):prev + 1] if _nn(r)]
+    width = max(len(cand), max(len(r) for r in body))
+    classes = learn_classes([(r + [""] * width)[:width] for r in body], width)
+    return any(classes[c] in "IND" and cand[c].strip() and vclass(cand[c]) == "T" for c in range(len(cand)))
+
+
+# --- one table ----------------------------------------------------------------------
+def grid_to_table(rows: Iterable[list], out: Path, name: str, log: RepairLog, source: dict,
+                  merged_header_cols: set | None = None, wrapped_rows: bool = False) -> Table | None:
+    materialized = isinstance(rows, list)
+    it = iter(rows)
+    head: list[list[str]] = []
+    for r in it:
+        head.append([cell_str(v) for v in r])
+        if len(head) >= HEAD_SCAN:
+            break
+    if not any(_nn(r) for r in head):
+        return None
+
+    width = max(len(r) for r in head)
+    nn = [_nn(r) for r in head]
+    maxnn = max(nn)
+    hdr = next((i for i, r in enumerate(head) if nn[i] >= max(2, 0.5 * maxnn) and _texty(r) >= 0.6 and not _is_title(r)
+                and not looks_like_data(r, [x for x in head[i + 1:] if _nn(x) >= 2])),
+               None)
+    has_header = hdr is not None
+    if hdr is None:
+        hdr = next(i for i, k in enumerate(nn) if k > 0)
+    for i in range(hdr):
+        if nn[i]:
+            log.add("preamble_skipped", i + 1, " ⎮ ".join(c for c in head[i] if c.strip()))
+
+    header_cells = head[hdr] if has_header else []
+    body_start = hdr + 1 if has_header else hdr
+    # multi-row header (up to 3 levels): following rows are text while the rows after them are data
+    levels = 1
+    while has_header and levels < 3 and body_start + 1 < len(head):
+        nxt = head[body_start]
+        # first real data row after the candidate (skip blanks and one-cell section labels)
+        after = next((r for r in head[body_start + 1:] if _nn(r) >= 2), None)
+        if after is None:
+            break
+        repeated = any(header_cells[i] and i + 1 < len(header_cells) and header_cells[i] == header_cells[i + 1]
+                       for i in range(len(header_cells) - 1))
+        gaps = any(not c.strip() for c in header_cells[:width])
+        pdf_wrap = wrapped_rows and _nn(nxt) >= 1 and not any(vclass(c) in "IND" for c in nxt if c.strip())
+        after_is_data = _texty(after) < _texty(nxt) and any(vclass(c) in "IND" for c in after if c.strip())
+        if not (_texty(nxt) >= 0.8 and after_is_data and (_nn(nxt) >= 2 or pdf_wrap)
+                and (repeated or gaps or merged_header_cols or pdf_wrap)):
+            break
+        combined, parent = [], ""
+        for i in range(max(len(header_cells), len(nxt))):
+            top = header_cells[i] if i < len(header_cells) else ""
+            sub = nxt[i] if i < len(nxt) else ""
+            if pdf_wrap and not (repeated or gaps):
+                combined.append(f"{top} {sub}".strip())     # header text wrapped onto a second line
+                continue
+            if not top.strip() and not sub.strip():
+                combined.append("")                         # spacer column: no inherited name
+                continue
+            parent = top or parent
+            same = parent.strip().lower() == sub.strip().lower()
+            combined.append(f"{parent} / {sub}" if parent and sub and not same else (sub or parent))
+        log.add("multirow_header_combined", hdr + 1, " ⎮ ".join(header_cells), " ⎮ ".join(combined))
+        header_cells = combined
+        body_start += 1
+        levels += 1
+
+    # keep columns that have a header or any value (materialised: look at every row)
+    sample_rows = [r for r in head[body_start:] if _nn(r)]
+    scan = [[cell_str(v) for v in r] for r in rows[len(head):]] if materialized else []
+    width = max([width] + [len(r) for r in scan]) if scan else width
+    keep = [i for i in range(width) if (i < len(header_cells) and header_cells[i].strip())
+            or any(i < len(r) and r[i].strip() for r in sample_rows)
+            or any(i < len(r) and r[i].strip() for r in scan)]
+    if not materialized:   # streaming: only trim the right edge, later rows may fill inner columns
+        keep = list(range((max(keep) + 1) if keep else width))
+    dropped = width - len(keep)
+    if dropped and materialized:
+        log.add("empty_column_dropped", None, detail=f"{dropped} empty spacer column(s)")
+    if not keep:
+        return None
+    pick = lambda r: [(r[i] if i < len(r) else "") for i in keep]  # noqa: E731
+    header = clean_header(pick(header_cells), len(keep)) if has_header else clean_header([], len(keep))
+    if not has_header:
+        log.note("No header row detected: generic column names generated.")
+    w = len(keep)
+    sec_name = clean_header(header + ["section"])[-1]
+
+    padded = [pick(r) for r in sample_rows]
+    classes = learn_classes(padded, w)
+    rep = RowRepairer(header, classes, "\t", log)
+    from .sink import ParquetSink   # lazy: keeps the header helpers importable without pyarrow
+    sink = ParquetSink(out, header + [sec_name])
+    state = {"section": None, "used_section": False, "pending": None, "data_rows": 0, "pending_notes": []}
+
+    def flush_pending():
+        if state["pending"] is not None:
+            row, ln = state["pending"]
+            state["pending"] = None
+            for fixed in rep.fix(row, ln):
+                sink.write(fixed + [state["section"]])
+                state["data_rows"] += 1
+            if state["section"] is not None:
+                state["used_section"] = True
+
+    def emit(raw: list[str], line_no: int):
+        extra = [c for c in raw[max(keep) + 1:] if c.strip()] if keep else []
+        row = pick(raw)
+        filled = [(i, c) for i, c in enumerate(row) if c.strip()]
+        if not filled and not extra:
+            log.counts["empty_row"] += 1
+            return
+        if extra:
+            row[-1] = (row[-1] + " " + " ".join(extra)).strip()
+            log.add("overflow_joined", line_no)
+        if rep.is_header_repeat(row):
+            log.add("repeated_header", line_no)
+            return
+        first = filled[0][1]
+        # total / subtotal rows
+        if TOTAL_RE.match(first) and any(vclass(c) in "IN" for _, c in filled[1:]):
+            log.add("total_row_removed", line_no, " ⎮ ".join(c for _, c in filled))
+            return
+        # one-cell rows: section label, footnote or wrapped continuation
+        if len(filled) == 1 and w >= 3 and vclass(first) == "T":
+            idx = filled[0][0]
+            if NOTE_RE.match(first) or len(first) > 80:
+                log.add("note_row_skipped", line_no, first)
+                return
+            if idx <= 1 and (SECTION_RE.search(first) or classes[idx] in "IND"):
+                flush_pending()
+                state["section"] = first.rstrip(":").strip()
+                log.add("section_row_to_column", line_no, first, detail=f"values copied into column '{sec_name}'")
+                return
+        # PDF: a record wrapped over several lines -> append text to the previous row
+        if (wrapped_rows and state["pending"] is not None and not row[0].strip() and len(filled) <= max(1, w // 2)
+                and all(vclass(c) == "T" for _, c in filled)):
+            prev = state["pending"][0]
+            for i, c in filled:
+                prev[i] = (prev[i] + " " + c).strip()
+            log.add("wrapped_row_merged", line_no, " ⎮ ".join(c for _, c in filled))
+            return
+        flush_pending()
+        state["pending"] = (row, line_no)
+
+    for i, r in enumerate(head[body_start:], start=body_start + 1):
+        emit(r, i)
+    if materialized:
+        for i, r in enumerate(scan, start=len(head) + 1):
+            emit(r, i)
+    else:
+        for i, r in enumerate(it, start=len(head) + 1):
+            emit([cell_str(v) for v in r], i)
+    flush_pending()
+    n = sink.close()
+    t = Table(name=name, path=out, columns=header + [sec_name], n_rows=n, source=source, repairs=log)
+    if not state["used_section"]:
+        t.drop_columns = [sec_name]
+        t.columns = header
+    return t
+
+
+def grid_to_tables(grid: list[list], out_dir: Path, base: str, label: str, log: RepairLog, source: dict,
+                   merged_header_cols: set | None = None, wrapped_rows: bool = False) -> list[Table]:
+    """Materialised grid: detect every table block, then normalise each one."""
+    sgrid = [[cell_str(v) for v in r] for r in grid]
+    blocks = find_blocks(sgrid)
+    tables = []
+    for bi, (r0, r1, c0, c1) in enumerate(blocks):
+        sub = [r[c0:c1 + 1] for r in sgrid[r0:r1 + 1]]
+        blog = log if bi == 0 else RepairLog()
+        name = label if len(blocks) == 1 else f"{label} [{_cell_ref(r0, c0)}:{_cell_ref(r1, c1)}]"
+        if len(blocks) > 1:
+            blog.note("Sheet/page holds {n} separate tables; this is table {i} ({rng}).", n=len(blocks), i=bi + 1,
+                      rng=f"{_cell_ref(r0, c0)}:{_cell_ref(r1, c1)}")
+        t = grid_to_table(sub, out_dir / f"{base}_b{bi}.parquet", name, blog,
+                          {**source, "range": f"{_cell_ref(r0, c0)}:{_cell_ref(r1, c1)}"},
+                          merged_header_cols=merged_header_cols, wrapped_rows=wrapped_rows)
+        if t is not None and t.n_rows:
+            tables.append(t)
+    return tables
+
+
+def _cell_ref(r: int, c: int) -> str:
+    s, c = "", c + 1
+    while c:
+        c, rem = divmod(c - 1, 26)
+        s = chr(65 + rem) + s
+    return f"{s}{r + 1}"

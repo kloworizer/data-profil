@@ -1,0 +1,67 @@
+# Production (air-gapped): 3 nodes x 72 cores / 786 GB RAM with a Spark cluster.
+# Images and models come from the offline bundle (scripts/offline_bundle.sh -> install_offline.sh);
+# nothing here pulls from the internet.
+#
+#   ./install_offline.sh docker-compose.prod.yml
+#
+# The AutoEDA container is the Spark *driver*. Executors must
+#   * reach the driver (network_mode: host is simplest; driver ports 7078/7079 open),
+#   * see AUTOEDA_SPARK_WORK_DIR and the input files at the same path (HDFS or a shared mount),
+#   * run Python 3.12 — only the standard library is needed; the autoeda code ships itself.
+#     Easiest on an air-gapped standalone cluster: run this same image as the Spark workers
+#     (see the commented `spark-worker` service), so versions match exactly.
+#   * run the same Spark version as PYSPARK_VERSION used to build the image (default 3.5.3).
+services:
+  autoeda:
+    image: autoeda:poc
+    command: ["web"]
+    network_mode: host
+    environment:
+      AUTOEDA_ENGINE: spark
+      AUTOEDA_SPARK_MASTER: spark://spark-master.internal:7077
+      AUTOEDA_SPARK_WORK_DIR: file:///shared/autoeda_work      # or hdfs:///tmp/autoeda
+      # ~3 x 72 cores: 14 executors/node x 5 cores, 48 GB each (+ overhead) leaves room for OS/daemons
+      AUTOEDA_SPARK_CONF: >-
+        spark.driver.port=7078;spark.blockManager.port=7079;
+        spark.executor.cores=5;spark.executor.memory=48g;spark.executor.memoryOverhead=8g;
+        spark.cores.max=210;spark.driver.maxResultSize=8g;
+        spark.sql.shuffle.partitions=840;spark.default.parallelism=840;
+        spark.pyspark.python=python3.12
+      # local DuckDB engine (Excel / PDF / XML / SQLite, or when chosen in the UI) on one big node
+      AUTOEDA_MEMORY_LIMIT: 256GB
+      AUTOEDA_THREADS: "64"
+      AUTOEDA_MAX_JOBS: "2"
+      AUTOEDA_LLM_BATCH: "8"
+      OLLAMA_HOST: http://localhost:11434
+      OLLAMA_MODEL: qwen3.5:2b        # any model included in the offline bundle (bigger = better narratives)
+    volumes:
+      - /srv/autoeda/data:/data
+      - /srv/datasets:/input:ro
+      - /shared/autoeda_work:/shared/autoeda_work
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest      # the tag saved in the bundle
+    network_mode: host
+    environment:
+      OLLAMA_HOST: 127.0.0.1:11434
+    volumes:
+      - ollama:/root/.ollama
+    restart: unless-stopped
+
+  # Run on each worker node (same image => same Python / Spark / libraries):
+  # spark-worker:
+  #   image: autoeda:poc
+  #   command: ["spark-worker"]
+  #   network_mode: host
+  #   environment:
+  #     SPARK_MASTER_URL: spark://spark-master.internal:7077
+  #     SPARK_WORKER_CORES: "70"
+  #     SPARK_WORKER_MEMORY: 700g
+  #   volumes:
+  #     - /srv/datasets:/input:ro
+  #     - /shared/autoeda_work:/shared/autoeda_work
+
+volumes:
+  ollama:
+    name: autoeda_ollama

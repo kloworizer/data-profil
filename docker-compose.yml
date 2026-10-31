@@ -1,0 +1,85 @@
+# Local PoC (16 GB laptop): AutoEDA + Ollama + a small Spark standalone cluster.
+#
+#   docker compose up -d --build
+#   docker compose exec ollama ollama pull qwen3.5:2b
+#
+#   UI            http://localhost:8000   (choose engine "Local (DuckDB)" or "Spark cluster")
+#   Spark master  http://localhost:8080   worker UI http://localhost:8081
+#
+# Memory budget (~10 GB): autoeda 5g, spark worker 3g, ollama ~3g with a 2B model.
+# Docker Desktop on Windows/WSL2 defaults to half of the RAM; raise it in %UserProfile%\.wslconfig:
+#   [wsl2]
+#   memory=12GB
+# Without Spark:  docker compose up -d autoeda ollama   (and pick the local engine)
+# Ollama already on the host? Remove the `ollama` service and set OLLAMA_HOST=http://host.docker.internal:11434
+
+x-autoeda-image: &image
+  image: autoeda:poc
+  build:
+    context: .
+    args:
+      WITH_SPARK: "1"
+      WITH_OCR: "1"
+
+x-shared-volumes: &volumes
+  # Driver and executors must see the same paths: uploads, intermediate Parquet, input files.
+  - ./data:/data
+  - ./input:/input:ro
+
+services:
+  autoeda:
+    <<: *image
+    hostname: autoeda            # executors connect back to the driver by this name
+    command: ["web"]
+    ports: ["8000:8000"]
+    environment:
+      AUTOEDA_ENGINE: local                       # default in the UI; Spark selectable per job
+      AUTOEDA_MEMORY_LIMIT: 3GB                   # DuckDB working memory; spills to /data beyond
+      AUTOEDA_THREADS: "4"
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://ollama:11434}
+      OLLAMA_MODEL: qwen3.5:2b
+      AUTOEDA_SPARK_MASTER: spark://spark-master:7077
+      AUTOEDA_SPARK_WORK_DIR: file:///data/spark_work
+      AUTOEDA_SPARK_CONF: >-
+        spark.driver.host=autoeda;spark.driver.bindAddress=0.0.0.0;
+        spark.driver.port=7078;spark.blockManager.port=7079;
+        spark.executor.memory=2g;spark.executor.cores=2;spark.cores.max=2;
+        spark.sql.shuffle.partitions=8;spark.default.parallelism=8
+    volumes: *volumes
+    mem_limit: 5g
+    depends_on: [ollama, spark-master]
+    restart: unless-stopped
+
+  spark-master:
+    <<: *image
+    command: ["spark-master"]
+    ports: ["8080:8080"]
+    environment:
+      SPARK_DAEMON_MEMORY: 512m
+    mem_limit: 1g
+    restart: unless-stopped
+
+  spark-worker:
+    <<: *image
+    command: ["spark-worker"]
+    ports: ["8081:8081"]
+    environment:
+      SPARK_MASTER_URL: spark://spark-master:7077
+      SPARK_WORKER_CORES: "2"
+      SPARK_WORKER_MEMORY: 2g
+      SPARK_DAEMON_MEMORY: 512m
+      SPARK_WORKER_DIR: /tmp/spark-worker
+    volumes: *volumes
+    mem_limit: 3g
+    depends_on: [spark-master]
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest   # pin a tag for reproducible deployments
+    volumes:
+      - ollama:/root/.ollama
+    restart: unless-stopped
+
+volumes:
+  ollama:
+    name: autoeda_ollama   # fixed name: the offline installer preloads models into it
