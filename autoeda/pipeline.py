@@ -6,7 +6,7 @@ import shutil
 import time
 from pathlib import Path
 
-from . import config
+from . import cancel, config
 from .narrative import describe_column
 
 
@@ -28,6 +28,23 @@ def run(path: str | Path, out_html: Path, *, job_id: str = "cli", engine: str | 
         if use_spark and not spark_engine.handles(path_s):
             warnings.append("This format is not handled by the Spark engine; the local engine was used.")
             use_spark = False
+        if use_spark:
+            sc = spark_engine.get_spark().sparkContext
+            sc.setJobGroup(job_id, f"autoeda {job_id}", interruptOnCancel=True)
+            cancel.on_cancel(lambda: sc.cancelJobGroup(job_id))
+
+        # the local model is checked once; it also helps read difficult table layouts
+        llm = None
+        llm_info = {"used": False, "model": model or config.OLLAMA_MODEL, "lang": lang}
+        if use_llm:
+            from .llm import Ollama
+            llm = Ollama(model)
+            if llm.available():
+                llm_info["used"] = True
+            else:
+                warnings.append(f"Ollama model '{llm.model}' not reachable at {llm.host}; "
+                                "report uses rule-based descriptions only.")
+                llm = None
 
         # 1. ingest ------------------------------------------------------
         progress(0.02, "Reading file")
@@ -38,7 +55,7 @@ def run(path: str | Path, out_html: Path, *, job_id: str = "cli", engine: str | 
         else:
             from .ingest import ingest
             p = Path(path_s)
-            tables, fmt = ingest(p, work, progress, max_rows=max_rows)
+            tables, fmt = ingest(p, work, progress, max_rows=max_rows, llm=llm)
             size = p.stat().st_size
         if not tables:
             raise ValueError("No tabular data found in the file.")
@@ -46,6 +63,7 @@ def run(path: str | Path, out_html: Path, *, job_id: str = "cli", engine: str | 
         # 2. profile -----------------------------------------------------
         results = []
         for i, t in enumerate(tables):
+            cancel.check()
             def prog(p, m, i=i):
                 # profilers report 0.5..0.9; spread that window across tables
                 progress(0.5 + (0.4 * i + max(0.0, p - 0.5)) / len(tables), m)
@@ -59,28 +77,22 @@ def run(path: str | Path, out_html: Path, *, job_id: str = "cli", engine: str | 
             results.append(res)
 
         # 3. LLM ---------------------------------------------------------
-        llm_info = {"used": False, "model": model or config.OLLAMA_MODEL, "lang": lang}
-        if use_llm:
-            from .llm import Ollama, describe_columns, summarize_dataset
+        if llm is not None:
+            from .llm import describe_columns, summarize_dataset
             from .llm_anomaly import review_table
-            llm = Ollama(model)
-            if llm.available():
-                llm_info["used"] = True
-                n = len(results)
-                for i, res in enumerate(results):
-                    base = 0.9 + 0.09 * i / n
-                    # AI anomaly review first, so descriptions and summary can mention its findings
-                    review_table(llm, res, lambda p, m: progress(base + 0.03 * p / n, m))
-                    progress(base + 0.03 / n, f"AI summary for {res['name']}")
-                    res["summary"] = summarize_dataset(llm, res, lang)
-                    describe_columns(llm, res, lambda p, m: progress(base + (0.04 + 0.05 * p) / n, m), lang)
-                    if res.get("llm_errors"):
-                        warnings.append(f"LLM errors on {res['name']}: {res['llm_errors'][0]}")
-            else:
-                warnings.append(f"Ollama model '{llm.model}' not reachable at {llm.host}; "
-                                "report uses rule-based descriptions only.")
+            n = len(results)
+            for i, res in enumerate(results):
+                base = 0.9 + 0.09 * i / n
+                # AI anomaly review first, so descriptions and summary can mention its findings
+                review_table(llm, res, lambda p, m: progress(base + 0.03 * p / n, m))
+                progress(base + 0.03 / n, f"AI summary for {res['name']}")
+                res["summary"] = summarize_dataset(llm, res, lang)
+                describe_columns(llm, res, lambda p, m: progress(base + (0.04 + 0.05 * p) / n, m), lang)
+                if res.get("llm_errors"):
+                    warnings.append(f"LLM errors on {res['name']}: {res['llm_errors'][0]}")
 
         # 4. report ------------------------------------------------------
+        cancel.check()
         progress(0.99, "Rendering report")
         result = {
             "file": {"name": Path(path_s.rstrip("/")).name, "size": size, "format": fmt},

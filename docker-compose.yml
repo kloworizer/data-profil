@@ -22,6 +22,7 @@ x-autoeda-image: &image
     args:
       WITH_SPARK: "1"
       WITH_OCR: "1"
+      WITH_DOCLING: "1"
 
 x-shared-volumes: &volumes
   # Driver and executors must see the same paths: uploads, intermediate Parquet, input files.

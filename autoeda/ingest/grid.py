@@ -18,8 +18,10 @@ import unicodedata
 from pathlib import Path
 from typing import Iterable
 
+from .. import cancel
 from ..models import RepairLog, Table, clean_header
 from .repair import PERIOD_RE, RowRepairer, learn_classes, looks_like_data, vclass
+from .structure import header_depth_guess
 
 HEAD_SCAN = 30
 TOTAL_RE = re.compile(r"^\s*(grand\s*-?\s*total|sub\s*-?\s*total|total(es|s)?|jumlah|sum|overall|totaal|gesamt)\b", re.I)
@@ -82,8 +84,9 @@ def _header_like(r) -> bool:
 
 
 # --- multi-table detection --------------------------------------------------------
-def find_blocks(grid: list[list[str]]) -> list[tuple[int, int, int, int]]:
-    """Split a materialised sheet into table blocks (r0, r1, c0, c1), inclusive."""
+def find_blocks(grid: list[list[str]], spans: dict | None = None) -> list[tuple[int, int, int, int]]:
+    """Split a materialised sheet into table blocks (r0, r1, c0, c1), inclusive.
+    spans: row -> (c0, c1) of a merged label cell; it ties together the columns it covers."""
     rows_nonblank = [i for i, r in enumerate(grid) if any(c.strip() for c in r)]
     if not rows_nonblank:
         return []
@@ -99,7 +102,9 @@ def find_blocks(grid: list[list[str]]) -> list[tuple[int, int, int, int]]:
     blocks = []
     for r0, r1 in vsegs:
         width = max(len(grid[r]) for r in range(r0, r1 + 1))
-        used = [c for c in range(width) if any(c < len(grid[r]) and grid[r][c].strip() for r in range(r0, r1 + 1))]
+        bridged = {c for r, (a, b) in (spans or {}).items() if r0 <= r <= r1 for c in range(a, b + 1)}
+        used = [c for c in range(width) if c in bridged
+                or any(c < len(grid[r]) and grid[r][c].strip() for r in range(r0, r1 + 1))]
         groups, cur = [], [used[0]]
         for c in used[1:]:
             if c - cur[-1] > 1:
@@ -146,9 +151,35 @@ def _starts_new_table(grid, start, prev, i, gap) -> bool:
 
 
 # --- one table ----------------------------------------------------------------------
+def _combine_level(header_cells: list[str], nxt: list[str], wrap_only: bool) -> list[str]:
+    """Merge one more header row into the names: 'parent / sub', or plain
+    concatenation when the header text merely wrapped onto a second line."""
+    combined, parent = [], ""
+    for i in range(max(len(header_cells), len(nxt))):
+        top = header_cells[i] if i < len(header_cells) else ""
+        sub = nxt[i] if i < len(nxt) else ""
+        if wrap_only:
+            combined.append(f"{top} {sub}".strip())         # header text wrapped onto a second line
+            continue
+        if not top.strip() and not sub.strip():
+            combined.append("")                             # spacer column: no inherited name
+            continue
+        parent = top or parent
+        same = parent.strip().lower() == sub.strip().lower()
+        combined.append(f"{parent} / {sub}" if parent and sub and not same else (sub or parent))
+    return combined
+
+
 def grid_to_table(rows: Iterable[list], out: Path, name: str, log: RepairLog, source: dict,
-                  merged_header_cols: set | None = None, wrapped_rows: bool = False) -> Table | None:
+                  merged_header_cols: set | None = None, wrapped_rows: bool = False,
+                  fixed_header: list[str] | None = None, label_rows: set | None = None,
+                  advisor=None) -> Table | None:
+    """fixed_header: header already worked out by the caller (rows are then all
+    body rows). label_rows: 0-based indexes of rows known to be label rows (a
+    merged cell spanning the row), turned into a section column. advisor: a
+    StructureAI asked when the rules are unsure about the header depth."""
     materialized = isinstance(rows, list)
+    label_rows = label_rows or set()
     it = iter(rows)
     head: list[list[str]] = []
     for r in it:
@@ -161,22 +192,28 @@ def grid_to_table(rows: Iterable[list], out: Path, name: str, log: RepairLog, so
     width = max(len(r) for r in head)
     nn = [_nn(r) for r in head]
     maxnn = max(nn)
-    hdr = next((i for i, r in enumerate(head) if nn[i] >= max(2, 0.5 * maxnn) and _texty(r) >= 0.6 and not _is_title(r)
-                and not looks_like_data(r, [x for j, x in enumerate(head[i + 1:]) if _nn(x) >= 2
-                                            and not (j < 2 and _texty(x) >= 0.8)])),   # skip sub-header rows
-               None)
-    has_header = hdr is not None
-    if hdr is None:
+    hdr = None
+    if fixed_header is None:
+        hdr = next((i for i, r in enumerate(head) if nn[i] >= max(2, 0.5 * maxnn) and _texty(r) >= 0.6
+                    and not _is_title(r)
+                    and not looks_like_data(r, [x for j, x in enumerate(head[i + 1:]) if _nn(x) >= 2
+                                                and not (j < 2 and _texty(x) >= 0.8)])),   # skip sub-header rows
+                   None)
+    has_header = hdr is not None or fixed_header is not None
+    if fixed_header is not None:
+        hdr = -1
+    elif hdr is None:
         hdr = next(i for i, k in enumerate(nn) if k > 0)
-    for i in range(hdr):
+    for i in range(max(0, hdr)):
         if nn[i]:
             log.add("preamble_skipped", i + 1, " ⎮ ".join(c for c in head[i] if c.strip()))
 
-    header_cells = head[hdr] if has_header else []
+    header_cells = list(fixed_header) if fixed_header is not None else head[hdr] if has_header else []
+    width = max(width, len(header_cells))
     body_start = hdr + 1 if has_header else hdr
     # multi-row header (up to 3 levels): following rows are text while the rows after them are data
     levels = 1
-    while has_header and levels < 3 and body_start + 1 < len(head):
+    while has_header and fixed_header is None and levels < 3 and body_start + 1 < len(head):
         nxt = head[body_start]
         # first real data row after the candidate (skip blanks and one-cell section labels)
         after = next((r for r in head[body_start + 1:] if _nn(r) >= 2), None)
@@ -190,23 +227,28 @@ def grid_to_table(rows: Iterable[list], out: Path, name: str, log: RepairLog, so
         if not (_texty(nxt) >= 0.8 and after_is_data and (_nn(nxt) >= 2 or pdf_wrap)
                 and (repeated or gaps or merged_header_cols or pdf_wrap)):
             break
-        combined, parent = [], ""
-        for i in range(max(len(header_cells), len(nxt))):
-            top = header_cells[i] if i < len(header_cells) else ""
-            sub = nxt[i] if i < len(nxt) else ""
-            if pdf_wrap and not (repeated or gaps):
-                combined.append(f"{top} {sub}".strip())     # header text wrapped onto a second line
-                continue
-            if not top.strip() and not sub.strip():
-                combined.append("")                         # spacer column: no inherited name
-                continue
-            parent = top or parent
-            same = parent.strip().lower() == sub.strip().lower()
-            combined.append(f"{parent} / {sub}" if parent and sub and not same else (sub or parent))
+        combined = _combine_level(header_cells, nxt, pdf_wrap and not (repeated or gaps))
         log.add("multirow_header_combined", hdr + 1, " ⎮ ".join(header_cells), " ⎮ ".join(combined))
         header_cells = combined
         body_start += 1
         levels += 1
+
+    # the rules could not tell whether the next row is one more header level: ask the local model
+    if has_header and fixed_header is None and advisor is not None and advisor.enabled and levels < 3:
+        raw = [r for r in head[hdr:] if _nn(r)][:12]
+        depth, unsure = header_depth_guess(raw, start=levels, limit=3)
+        if unsure:
+            n = advisor.header_rows(raw, levels)
+            if n and n > levels:
+                before = " ⎮ ".join(header_cells)
+                for _ in range(n - levels):
+                    while body_start < len(head) and not _nn(head[body_start]):
+                        body_start += 1
+                    header_cells = _combine_level(header_cells, head[body_start], False)
+                    body_start += 1
+                log.add("ai_layout", hdr + 1, before, " ⎮ ".join(header_cells),
+                        detail=f"AI: the header spans {n} rows")
+                levels = n
 
     # keep columns that have a header or any value (materialised: look at every row)
     sample_rows = [r for r in head[body_start:] if _nn(r)]
@@ -215,6 +257,8 @@ def grid_to_table(rows: Iterable[list], out: Path, name: str, log: RepairLog, so
     keep = [i for i in range(width) if (i < len(header_cells) and header_cells[i].strip())
             or any(i < len(r) and r[i].strip() for r in sample_rows)
             or any(i < len(r) and r[i].strip() for r in scan)]
+    if fixed_header is not None:
+        keep = list(range(width))     # the caller already dropped empty columns
     if not materialized:   # streaming: only trim the right edge, later rows may fill inner columns
         keep = list(range((max(keep) + 1) if keep else width))
     dropped = width - len(keep)
@@ -253,6 +297,8 @@ def grid_to_table(rows: Iterable[list], out: Path, name: str, log: RepairLog, so
         if not filled and not extra:
             log.counts["empty_row"] += 1
             return
+        if line_no % 5000 == 0:
+            cancel.check()
         if extra:
             row[-1] = (row[-1] + " " + " ".join(extra)).strip()
             log.add("overflow_joined", line_no)
@@ -265,12 +311,18 @@ def grid_to_table(rows: Iterable[list], out: Path, name: str, log: RepairLog, so
             log.add("total_row_removed", line_no, " ⎮ ".join(c for _, c in filled))
             return
         # one-cell rows: section label, footnote or wrapped continuation
-        if len(filled) == 1 and w >= 3 and vclass(first) == "T":
+        if len(filled) == 1 and w >= 2 and vclass(first) == "T":
             idx = filled[0][0]
             if NOTE_RE.match(first) or len(first) > 80:
                 log.add("note_row_skipped", line_no, first)
                 return
-            if idx <= 1 and (SECTION_RE.search(first) or classes[idx] in "IND"):
+            # a merged cell spanning the row is a label for the rows below it; so is a lone
+            # first-column text where the other columns always hold numbers / dates
+            # (a capital first letter, so a wrapped line of a long name stays a continuation)
+            typed_rest = sum(1 for j, k in enumerate(classes) if j != idx and k in "IND") >= 2
+            if (line_no - 1) in label_rows or (
+                    w >= 3 and idx <= 1 and (SECTION_RE.search(first) or classes[idx] in "IND"
+                                             or (typed_rest and first[:1].isupper()))):
                 flush_pending()
                 state["section"] = first.rstrip(":").strip()
                 log.add("section_row_to_column", line_no, first, detail=f"values copied into column '{sec_name}'")
@@ -304,10 +356,12 @@ def grid_to_table(rows: Iterable[list], out: Path, name: str, log: RepairLog, so
 
 
 def grid_to_tables(grid: list[list], out_dir: Path, base: str, label: str, log: RepairLog, source: dict,
-                   merged_header_cols: set | None = None, wrapped_rows: bool = False) -> list[Table]:
-    """Materialised grid: detect every table block, then normalise each one."""
+                   merged_header_cols: set | None = None, wrapped_rows: bool = False,
+                   label_rows: set | None = None, advisor=None) -> list[Table]:
+    """Materialised grid: detect every table block, then normalise each one.
+    label_rows: grid row indexes holding one merged label cell (section rows)."""
     sgrid = [[cell_str(v) for v in r] for r in grid]
-    blocks = find_blocks(sgrid)
+    blocks = find_blocks(sgrid, label_rows if isinstance(label_rows, dict) else None)
     tables = []
     for bi, (r0, r1, c0, c1) in enumerate(blocks):
         sub = [r[c0:c1 + 1] for r in sgrid[r0:r1 + 1]]
@@ -318,7 +372,8 @@ def grid_to_tables(grid: list[list], out_dir: Path, base: str, label: str, log: 
                       rng=f"{_cell_ref(r0, c0)}:{_cell_ref(r1, c1)}")
         t = grid_to_table(sub, out_dir / f"{base}_b{bi}.parquet", name, blog,
                           {**source, "range": f"{_cell_ref(r0, c0)}:{_cell_ref(r1, c1)}"},
-                          merged_header_cols=merged_header_cols, wrapped_rows=wrapped_rows)
+                          merged_header_cols=merged_header_cols, wrapped_rows=wrapped_rows,
+                          label_rows={r - r0 for r in (label_rows or ()) if r0 <= r <= r1}, advisor=advisor)
         if t is not None and t.n_rows:
             tables.append(t)
     return tables

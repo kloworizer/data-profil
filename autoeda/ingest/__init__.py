@@ -49,7 +49,6 @@ def sniff_format(path: Path) -> str:
     if nul > 0.02 * len(head) and not utf16_no_bom and not head.startswith((b"\xff\xfe", b"\xfe\xff")):
         return "unsupported"
     return "text"   # stray NUL bytes are stripped while parsing
-    return "text"
 
 
 def _ole_names(path: Path) -> bytes:
@@ -57,7 +56,9 @@ def _ole_names(path: Path) -> bytes:
         return f.read(64 * 1024)
 
 
-def ingest(path: Path, work_dir: Path, progress=lambda p, m: None, max_rows: int = 0) -> tuple[list[Table], str]:
+def ingest(path: Path, work_dir: Path, progress=lambda p, m: None, max_rows: int = 0,
+           llm=None) -> tuple[list[Table], str]:
+    """llm: optional Ollama client, asked about table layouts the rules can't settle."""
     from . import delimited, excel, others, pdf
 
     fmt = sniff_format(path)
@@ -76,4 +77,6 @@ def ingest(path: Path, work_dir: Path, progress=lambda p, m: None, max_rows: int
     }
     if fmt not in handlers:
         raise ValueError(f"Unsupported binary format ({path.suffix or 'no extension'}).")
+    if fmt in ("spreadsheet", "pdf"):
+        return handlers[fmt](path, work_dir, name, progress, llm=llm), fmt
     return handlers[fmt](path, work_dir, name, progress), fmt

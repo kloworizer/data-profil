@@ -6,12 +6,13 @@ from pathlib import Path
 
 import duckdb
 
-from . import config
+from . import cancel, config
 
 
 def connect(spill_dir: Path | None = None) -> duckdb.DuckDBPyConnection:
     # Air-gapped servers: never try to download extensions (the ones used here are built in).
     con = duckdb.connect(config={"autoinstall_known_extensions": False})
+    cancel.on_cancel(con.interrupt)   # a stop request aborts the running query
     con.execute(f"SET memory_limit='{config.DUCKDB_MEMORY_LIMIT}'")
     con.execute(f"SET threads={config.DUCKDB_THREADS}")
     con.execute("SET preserve_insertion_order=false")
@@ -37,12 +38,17 @@ def run_with_progress(con, sql: str, cb, interval: float = 1.0):
     t.start()
     while t.is_alive():
         t.join(interval)
+        if cancel.cancelled():
+            con.interrupt()
+            t.join()
+            cancel.check()
         try:
             p = con.query_progress()
             if p is not None and p >= 0:
                 cb(min(1.0, p / 100))
         except Exception:
             pass
+    cancel.check()
     if err:
         raise err[0]
 

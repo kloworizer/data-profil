@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import threading
 import time
 import traceback
@@ -18,7 +19,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
-from . import __version__, config
+from . import __version__, cancel, config
+from .cancel import CancelToken, Cancelled
 from .llm import Ollama
 
 config.ensure_dirs()
@@ -34,6 +36,10 @@ def _safe_name(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "_", name)[:120] or "upload"
 
 
+ACTIVE = ("queued", "running", "cancelling")
+_tokens: dict[str, CancelToken] = {}     # job id -> cancel token of its current run
+
+
 def _save(job: dict):
     (config.REPORT_DIR / f"{job['id']}.job.json").write_text(json.dumps(job, default=str), encoding="utf-8")
 
@@ -42,7 +48,7 @@ def _load_jobs():
     for f in sorted(config.REPORT_DIR.glob("*.job.json")):
         try:
             j = json.loads(f.read_text(encoding="utf-8"))
-            if j.get("status") in ("queued", "running"):
+            if j.get("status") in ACTIVE:
                 j.update(status="failed", message="Server restarted while the job was running.")
             _jobs[j["id"]] = j
         except Exception:
@@ -52,50 +58,109 @@ def _load_jobs():
 _load_jobs()
 
 
-def _update(job_id: str, **kw):
+def _update(job_id: str, run: int | None = None, **kw) -> bool:
+    """Update a job; with `run`, only while that run is still the job's current one
+    (a stopped or restarted run must not overwrite the new run's state)."""
     with _lock:
-        job = _jobs[job_id]
+        job = _jobs.get(job_id)
+        if job is None or (run is not None and job.get("run", 1) != run):
+            return False
         job.update(kw)
         _save(job)
+        return True
 
 
-def _run_job(job_id: str, path: str, opts: dict, cleanup: bool):
-    from .pipeline import run
+def _input_ok(job: dict) -> bool:
+    src = job.get("input")
+    return bool(src) and ("://" in src or Path(src).exists())
 
-    _update(job_id, status="running", started=time.time())
+
+def _drop_input(job: dict):
+    """Delete an uploaded file (and its folder); server-side input files are never touched."""
+    src = job.get("input")
+    if not src or not job.get("cleanup") or "://" in src:
+        return
+    p = Path(src)
+    if p.parent.parent == config.UPLOAD_DIR:
+        shutil.rmtree(p.parent, ignore_errors=True)
+    else:
+        p.unlink(missing_ok=True)
+
+
+def _public(job: dict) -> dict:
+    out = {k: v for k, v in job.items() if k != "input"}
+    out["can_restart"] = job.get("status") != "cancelling" and _input_ok(job)
+    return out
+
+
+def _run_job(job_id: str, run: int, token: CancelToken):
+    from .pipeline import run as run_pipeline
+
+    if token.cancelled:
+        return    # stopped (or restarted) while waiting in the queue
+    job = _jobs.get(job_id)
+    if job is None or not _update(job_id, run, status="running", started=time.time(), message="Starting"):
+        return
+    opts, path = job["options"], job["input"]
     last = [0.0]
 
     def progress(p, msg):
+        token.check()
         now = time.time()
         if now - last[0] > 0.5 or p >= 1:
             last[0] = now
-            _update(job_id, progress=round(p, 3), message=msg)
+            _update(job_id, run, progress=round(p, 3), message=msg)
 
+    ok = False
     try:
         out = config.REPORT_DIR / f"{job_id}.html"
-        res = run(path, out, job_id=job_id, engine=opts["engine"], use_llm=opts["use_llm"], model=opts["model"],
-                  max_rows=opts["max_rows"], lang=opts["lang"], progress=progress)
+        with cancel.use(token):
+            res = run_pipeline(path, out, job_id=f"{job_id}_{run}", engine=opts["engine"], use_llm=opts["use_llm"],
+                               model=opts["model"], max_rows=opts["max_rows"], lang=opts["lang"], progress=progress)
         summary = [{"name": t["name"], "rows": t["n_rows"], "cols": t["n_cols"], "warnings": t["n_warnings"],
                     "repairs": t["repairs"]["total"]} for t in res["tables"]]
-        _update(job_id, status="done", progress=1.0, message="Done", finished=time.time(),
-                elapsed_s=res["elapsed_s"], tables=summary, warnings=res["warnings"])
+        ok = _update(job_id, run, status="done", progress=1.0, message="Done", finished=time.time(),
+                     elapsed_s=res["elapsed_s"], tables=summary, warnings=res["warnings"])
+    except Cancelled:
+        _update(job_id, run, status="cancelled", message="Stopped by the user.", finished=time.time())
     except Exception as e:
         traceback.print_exc()
-        _update(job_id, status="failed", message=f"{type(e).__name__}: {e}", finished=time.time())
+        _update(job_id, run, status="failed", message=f"{type(e).__name__}: {e}", finished=time.time())
     finally:
-        if cleanup:
-            Path(path).unlink(missing_ok=True)
+        with _lock:
+            if _tokens.get(job_id) is token:
+                _tokens.pop(job_id, None)
+        if ok:
+            _drop_input(_jobs.get(job_id, {}))   # failed / stopped jobs keep their input for a restart
+
+
+def _start(job_id: str):
+    """Queue a (new) run of a job; a run still going is told to stop."""
+    token = CancelToken()
+    with _lock:
+        job = _jobs[job_id]
+        old = _tokens.get(job_id)
+        run = job.get("run", 0) + 1
+        _tokens[job_id] = token
+        for k in ("started", "finished", "elapsed_s", "tables", "warnings"):
+            job.pop(k, None)
+        job.update(run=run, status="queued", progress=0.0, message="Queued", queued=time.time())
+        _save(job)
+    if old is not None:
+        old.cancel()
+    for ext in (".html", ".json"):
+        (config.REPORT_DIR / f"{job_id}{ext}").unlink(missing_ok=True)
+    _pool.submit(_run_job, job_id, run, token)
 
 
 def _submit(path: str, filename: str, size, opts: dict, cleanup: bool) -> dict:
     job_id = uuid.uuid4().hex[:12]
     job = {"id": job_id, "file": filename, "size": size, "status": "queued", "progress": 0.0,
-           "message": "Queued", "created": time.time(), "options": opts}
+           "message": "Queued", "created": time.time(), "options": opts, "input": path, "cleanup": cleanup, "run": 0}
     with _lock:
         _jobs[job_id] = job
-        _save(job)
-    _pool.submit(_run_job, job_id, path, opts, cleanup)
-    return job
+    _start(job_id)
+    return _public(job)
 
 
 def _opts(engine, use_llm, model, max_rows, lang="en") -> dict:
@@ -170,7 +235,7 @@ def input_files():
 @app.get("/api/jobs")
 def jobs():
     with _lock:
-        return sorted(_jobs.values(), key=lambda j: -j["created"])[:100]
+        return [_public(j) for j in sorted(_jobs.values(), key=lambda j: -j["created"])[:100]]
 
 
 @app.get("/api/jobs/{job_id}")
@@ -178,7 +243,39 @@ def job(job_id: str):
     j = _jobs.get(job_id)
     if not j:
         raise HTTPException(404, "Unknown job")
-    return j
+    return _public(j)
+
+
+@app.post("/api/jobs/{job_id}/cancel")
+def cancel_job(job_id: str):
+    """Stop a queued or running job. Running work stops at its next checkpoint
+    (DuckDB queries, Spark jobs and AI requests are interrupted)."""
+    j = _jobs.get(job_id)
+    if not j:
+        raise HTTPException(404, "Unknown job")
+    if j["status"] not in ("queued", "running"):
+        raise HTTPException(409, "Job is not running")
+    with _lock:
+        token = _tokens.get(job_id)
+    if j["status"] == "queued":
+        _update(job_id, status="cancelled", message="Stopped by the user.", finished=time.time())
+    else:
+        _update(job_id, status="cancelling", message="Stopping")
+    if token is not None:
+        token.cancel()
+    return _public(j)
+
+
+@app.post("/api/jobs/{job_id}/restart")
+def restart_job(job_id: str):
+    """Run a job again from its original input (stops the current run first)."""
+    j = _jobs.get(job_id)
+    if not j:
+        raise HTTPException(404, "Unknown job")
+    if not _input_ok(j):
+        raise HTTPException(410, "The original file is no longer available; please upload it again.")
+    _start(job_id)
+    return _public(j)
 
 
 @app.delete("/api/jobs/{job_id}")
@@ -186,12 +283,13 @@ def delete_job(job_id: str):
     j = _jobs.get(job_id)
     if not j:
         raise HTTPException(404, "Unknown job")
-    if j["status"] in ("queued", "running"):
-        raise HTTPException(409, "Job is still running")
+    if j["status"] in ACTIVE:
+        raise HTTPException(409, "Job is still running; stop it first")
     for ext in (".html", ".json", ".job.json"):
         (config.REPORT_DIR / f"{job_id}{ext}").unlink(missing_ok=True)
     with _lock:
         _jobs.pop(job_id, None)
+    _drop_input(j)
     return {"deleted": job_id}
 
 

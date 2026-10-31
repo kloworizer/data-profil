@@ -60,6 +60,23 @@ select, input[type=text], input[type=number] { padding: 9px 11px; border: 1px so
 .chip.done { background: var(--good-soft); color: var(--good); }
 .chip.failed { background: var(--bad-soft); color: var(--bad); }
 .chip.running, .chip.queued { background: var(--accent-soft); color: var(--accent); }
+.chip.cancelling, .chip.cancelled { background: var(--line); color: var(--muted); }
+.btn.danger { color: var(--bad); border-color: var(--bad); }
+.btn.danger:hover { background: var(--bad-soft); }
+.btn.primary.danger { background: var(--bad); color: #fff; }
+.btn.sm { padding: 5px 13px; font-size: 14px; }
+.track.stopping i { background: var(--muted); }
+#dlg-back { position: fixed; inset: 0; z-index: 95; background: rgba(10, 14, 22, .55); display: none; align-items: center; justify-content: center; padding: 16px; }
+#dlg-back.open { display: flex; }
+#dlg { width: min(420px, 100%); background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 16px; padding: 22px; box-shadow: 0 12px 40px rgba(0,0,0,.3); }
+#dlg h3 { margin: 0 0 8px; font-size: 18px; }
+#dlg p { margin: 0; color: var(--muted); }
+#dlg .row { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; flex-wrap: wrap; }
+#toasts { position: fixed; z-index: 96; left: 50%; bottom: 20px; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; width: min(460px, calc(100vw - 32px)); pointer-events: none; }
+.toast { pointer-events: auto; display: flex; gap: 10px; align-items: flex-start; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 12px; padding: 12px 14px; box-shadow: 0 8px 28px rgba(0,0,0,.18); animation: toastin .2s ease-out; }
+.toast.bad { border-left-color: var(--bad); } .toast.good { border-left-color: var(--good); }
+.toast span { flex: 1; } .toast .x { font-size: 16px; padding: 0; }
+@keyframes toastin { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 .job .stage { margin: 8px 0 6px; font-size: 15px; }
 .job .actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 .x { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 18px; }
@@ -131,6 +148,11 @@ select, input[type=text], input[type=number] { padding: 9px 11px; border: 1px so
   </section>
 </main>
 
+<div id="dlg-back" role="presentation"><div id="dlg" role="dialog" aria-modal="true" aria-labelledby="dlg-title" aria-describedby="dlg-text">
+  <h3 id="dlg-title"></h3><p id="dlg-text"></p>
+  <div class="row"><button class="btn" id="dlg-no"></button><button class="btn primary" id="dlg-yes"></button></div></div></div>
+<div id="toasts" aria-live="polite"></div>
+
 <div id="tour-back"><div id="tour-spot"></div><div id="tour-card"><h3 id="tour-title"></h3><div id="tour-text"></div>
   <div class="row"><span class="sub" id="tour-dots"></span><span><button class="btn" id="tour-prev"></button> <button class="btn primary" id="tour-next"></button></span></div></div></div>
 
@@ -159,7 +181,15 @@ var T = {
   err_scan: 'This PDF is a scanned image without text. Ask IT to enable text recognition (OCR), or use the original file.',
   err_fmt: 'This kind of file is not supported. Try Excel, CSV, PDF or text.', err_empty: 'The file is empty.',
   err_upload: 'Sending the file failed. Please try again.',
-  sys_ok: 'System ready', sys_engine: 'engine', confirm_del: 'Remove this report?',
+  sys_ok: 'System ready', sys_engine: 'engine',
+  st_cancelling: 'Stopping', st_cancelled: 'Stopped', stage_stopping: 'Stopping… this takes a moment.',
+  stopped_msg: 'You stopped this analysis.', stop: 'Stop', restart: 'Restart', retry: 'Try again', run_again: 'Run again',
+  keep: 'Keep going', cancel: 'Cancel', ok: 'OK',
+  confirm_del_t: 'Remove this report?', confirm_del: 'The report will be deleted from this server. This cannot be undone.', del_yes: 'Remove',
+  confirm_stop_t: 'Stop this analysis?', confirm_stop: 'Work done so far on this file is discarded. You can restart it later.', stop_yes: 'Stop analysis',
+  confirm_restart_t: 'Start over?', confirm_restart: 'The analysis that is running now will be stopped and started again from the beginning.', restart_yes: 'Start over',
+  toast_stopped: 'Stopping the analysis…', toast_restarted: 'The analysis starts again.', err_gone: 'The original file is no longer on the server. Please choose it again.',
+  err_action: 'That did not work. Please try again.',
   next: 'Next', prev: 'Back', done: 'Got it',
   tour: [
    ['#t-upload', '1. Choose your file', 'Click the box or drag your file into it. Excel, CSV, PDF and many other files work, even very large ones.'],
@@ -191,7 +221,15 @@ var T = {
   err_scan: 'PDF ini berupa gambar hasil pindai tanpa teks. Minta tim IT mengaktifkan pengenalan teks (OCR), atau gunakan file aslinya.',
   err_fmt: 'Jenis file ini belum didukung. Coba Excel, CSV, PDF, atau teks.', err_empty: 'File kosong.',
   err_upload: 'Pengiriman file gagal. Silakan coba lagi.',
-  sys_ok: 'Sistem siap', sys_engine: 'mesin', confirm_del: 'Hapus laporan ini?',
+  sys_ok: 'Sistem siap', sys_engine: 'mesin',
+  st_cancelling: 'Menghentikan', st_cancelled: 'Dihentikan', stage_stopping: 'Menghentikan… mohon tunggu sebentar.',
+  stopped_msg: 'Anda menghentikan analisis ini.', stop: 'Hentikan', restart: 'Mulai ulang', retry: 'Coba lagi', run_again: 'Jalankan lagi',
+  keep: 'Lanjutkan', cancel: 'Batal', ok: 'OK',
+  confirm_del_t: 'Hapus laporan ini?', confirm_del: 'Laporan akan dihapus dari server ini. Tindakan ini tidak bisa dibatalkan.', del_yes: 'Hapus',
+  confirm_stop_t: 'Hentikan analisis ini?', confirm_stop: 'Pekerjaan yang sudah berjalan untuk file ini dibuang. Anda bisa memulainya lagi nanti.', stop_yes: 'Hentikan analisis',
+  confirm_restart_t: 'Mulai dari awal?', confirm_restart: 'Analisis yang sedang berjalan akan dihentikan lalu dimulai lagi dari awal.', restart_yes: 'Mulai dari awal',
+  toast_stopped: 'Menghentikan analisis…', toast_restarted: 'Analisis dimulai lagi.', err_gone: 'File asli sudah tidak ada di server. Silakan pilih file itu lagi.',
+  err_action: 'Gagal. Silakan coba lagi.',
   next: 'Lanjut', prev: 'Kembali', done: 'Mengerti',
   tour: [
    ['#t-upload', '1. Pilih file', 'Klik kotak ini atau seret file Anda ke dalamnya. Excel, CSV, PDF, dan banyak jenis file lain bisa, termasuk yang sangat besar.'],
@@ -243,19 +281,21 @@ function analyze() {
   xhr.upload.onprogress = function (e) { if (!e.lengthComputable) return; var p = e.loaded / e.total;
     $('upfill').style.width = (100 * p).toFixed(1) + '%'; $('uptext').textContent = t('uploading', { p: Math.round(100 * p) + '%' }); };
   xhr.onload = function () { $('upbar').style.display = 'none';
-    if (xhr.status >= 300) { alert(t('err_upload')); $('goBtn').disabled = false; return; }
+    if (xhr.status >= 300) { toast(t('err_upload'), 'bad'); $('goBtn').disabled = false; return; }
     clearFile(); setStep(3); refresh(); $('t-jobs').scrollIntoView({ behavior: 'smooth' }); };
-  xhr.onerror = function () { $('upbar').style.display = 'none'; $('goBtn').disabled = false; alert(t('err_upload')); };
+  xhr.onerror = function () { $('upbar').style.display = 'none'; $('goBtn').disabled = false; toast(t('err_upload'), 'bad'); };
   xhr.send(FILE);
 }
 function fromPath() {
   var path = $('path').value.trim(); if (!path) return;
   var o = opts(); o.path = path;
   fetch('/api/path', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(o) })
-    .then(function (r) { return r.json().then(function (j) { if (!r.ok) alert(j.detail || t('err_generic')); else { setStep(3); refresh(); } }); });
+    .then(function (r) { return r.json().then(function (j) { if (!r.ok) toast(j.detail || t('err_generic'), 'bad'); else { setStep(3); refresh(); } }); })
+    .catch(function () { toast(t('err_generic'), 'bad'); });
 }
 function stage(j) {
   if (j.status === 'queued') return t('stage_queue');
+  if (j.status === 'cancelling') return t('stage_stopping');
   var p = j.progress || 0;
   return p < 0.1 ? t('stage_read') : p < 0.5 ? t('stage_fix') : p < 0.9 ? t('stage_cols') : p < 0.99 ? t('stage_ai') : t('stage_report');
 }
@@ -268,29 +308,76 @@ function friendlyError(m) {
   return t('err_generic');
 }
 function dur(s) { s = Math.round(s || 0); return s < 60 ? s + ' s' : Math.floor(s / 60) + ' min ' + (s % 60) + ' s'; }
-function delJob(id) { if (confirm(t('confirm_del'))) fetch('/api/jobs/' + id, { method: 'DELETE' }).then(refresh); }
+// --- in-page dialog and notices (instead of the browser's alert / confirm) ---------------
+var dlgDone = null, dlgFocus = null;
+function ask(title, text, yes, danger) {
+  return new Promise(function (resolve) {
+    dlgFocus = document.activeElement;
+    $('dlg-title').textContent = title; $('dlg-text').textContent = text;
+    $('dlg-yes').textContent = yes; $('dlg-no').textContent = t('cancel');
+    $('dlg-yes').classList.toggle('danger', !!danger);
+    $('dlg-back').classList.add('open');
+    dlgDone = function (v) { $('dlg-back').classList.remove('open'); dlgDone = null; if (dlgFocus) dlgFocus.focus(); resolve(v); };
+    $('dlg-no').focus();
+  });
+}
+$('dlg-yes').onclick = function () { if (dlgDone) dlgDone(true); };
+$('dlg-no').onclick = function () { if (dlgDone) dlgDone(false); };
+$('dlg-back').addEventListener('click', function (e) { if (e.target.id === 'dlg-back' && dlgDone) dlgDone(false); });
+function toast(msg, kind) {
+  var el = document.createElement('div');
+  el.className = 'toast ' + (kind || ''); el.setAttribute('role', kind === 'bad' ? 'alert' : 'status');
+  el.innerHTML = '<span></span><button class="x" aria-label="' + esc(t('ok')) + '">✕</button>';
+  el.firstChild.textContent = msg;
+  var close = function () { if (el.parentNode) el.parentNode.removeChild(el); };
+  el.lastChild.onclick = close;
+  $('toasts').appendChild(el);
+  setTimeout(close, kind === 'bad' ? 9000 : 4500);
+}
+function jobAction(id, action, okMsg) {
+  return fetch('/api/jobs/' + id + (action === 'delete' ? '' : '/' + action), { method: action === 'delete' ? 'DELETE' : 'POST' })
+    .then(function (r) {
+      if (r.ok) { if (okMsg) toast(okMsg, 'good'); return refresh(true); }
+      toast(r.status === 410 ? t('err_gone') : t('err_action'), 'bad'); refresh(true);
+    }).catch(function () { toast(t('err_action'), 'bad'); });
+}
+function delJob(id) { ask(t('confirm_del_t'), t('confirm_del'), t('del_yes'), true).then(function (ok) { if (ok) jobAction(id, 'delete'); }); }
+function stopJob(id) { ask(t('confirm_stop_t'), t('confirm_stop'), t('stop_yes'), true).then(function (ok) { if (ok) jobAction(id, 'cancel', t('toast_stopped')); }); }
+function restartJob(id, running) {
+  if (!running) return jobAction(id, 'restart', t('toast_restarted'));
+  ask(t('confirm_restart_t'), t('confirm_restart'), t('restart_yes')).then(function (ok) { if (ok) jobAction(id, 'restart', t('toast_restarted')); });
+}
 
 var busy = false;
-function refresh() {
-  if (busy) return; busy = true;
+function refresh(force) {
+  if (busy && !force) return; busy = true;
   fetch('/api/jobs').then(function (r) { return r.json(); }).then(function (jobs) {
     busy = false;
     if (!jobs.length) { $('jobs').innerHTML = '<p class="sub">' + esc(t('no_jobs')) + '</p>'; return; }
     $('jobs').innerHTML = jobs.map(function (j) {
-      var pct = Math.round((j.progress || 0) * 100), body = '';
+      var pct = Math.round((j.progress || 0) * 100), body = '', id = "'" + j.id + "'";
+      var running = j.status === 'queued' || j.status === 'running';
+      var again = j.can_restart ? '<button class="btn sm" onclick="restartJob(' + id + ', false)">↻ ' +
+        esc(t(j.status === 'done' ? 'run_again' : 'retry')) + '</button>' : '';
       if (j.status === 'done') {
         var rows = 0, cols = 0; (j.tables || []).forEach(function (x) { rows += x.rows; cols += x.cols; });
         body = '<div class="sub">' + esc(t('tables', { n: (j.tables || []).length, rows: num(rows), cols: num(cols) })) + ' · ' + esc(t('took', { s: dur(j.elapsed_s) })) + '</div>' +
           '<div class="actions"><a class="btn primary" href="/reports/' + j.id + '" target="_blank">📖 ' + esc(t('open')) + '</a>' +
-          '<a class="btn" href="/reports/' + j.id + '?download=1">⬇ ' + esc(t('download')) + '</a></div>';
+          '<a class="btn" href="/reports/' + j.id + '?download=1">⬇ ' + esc(t('download')) + '</a>' + again + '</div>';
       } else if (j.status === 'failed') {
-        body = '<div class="err">' + esc(friendlyError(j.message)) + '</div><details class="sub"><summary>' + esc(t('details')) + '</summary>' + esc(j.message) + '</details>';
+        body = '<div class="err">' + esc(friendlyError(j.message)) + '</div><details class="sub"><summary>' + esc(t('details')) + '</summary>' + esc(j.message) + '</details>' +
+          (again ? '<div class="actions">' + again + '</div>' : '');
+      } else if (j.status === 'cancelled') {
+        body = '<div class="sub" style="margin-top:6px">' + esc(t('stopped_msg')) + '</div>' + (again ? '<div class="actions">' + again + '</div>' : '');
       } else {
-        body = '<div class="stage">' + esc(stage(j)) + ' <b>' + pct + '%</b></div><div class="track"><i style="width:' + pct + '%"></i></div>';
+        body = '<div class="stage">' + esc(stage(j)) + ' <b>' + pct + '%</b></div><div class="track' + (j.status === 'cancelling' ? ' stopping' : '') +
+          '"><i style="width:' + pct + '%"></i></div>' +
+          (running ? '<div class="actions"><button class="btn sm danger" onclick="stopJob(' + id + ')">■ ' + esc(t('stop')) + '</button>' +
+            (j.can_restart ? '<button class="btn sm" onclick="restartJob(' + id + ', true)">↻ ' + esc(t('restart')) + '</button>' : '') + '</div>' : '');
       }
       return '<div class="job"><div class="top"><span style="font-size:22px">📄</span><span class="fname">' + esc(j.file) + '</span>' +
         '<span class="sub">' + esc(bytes(j.size)) + '</span><span class="chip ' + j.status + '">' + esc(t('st_' + j.status)) + '</span>' +
-        (['done', 'failed'].indexOf(j.status) >= 0 ? '<button class="x" title="' + esc(t('del')) + '" onclick="delJob(\'' + j.id + '\')">🗑</button>' : '') +
+        (['done', 'failed', 'cancelled'].indexOf(j.status) >= 0 ? '<button class="x" title="' + esc(t('del')) + '" aria-label="' + esc(t('del')) + '" onclick="delJob(' + id + ')">🗑</button>' : '') +
         '</div>' + body + '</div>';
     }).join('');
   }).catch(function () { busy = false; });
@@ -318,7 +405,10 @@ function tourEnd() { $('tour-back').style.display = 'none'; store('autoeda-app-t
 $('tour-next').onclick = function () { if (step < T[LANG].tour.length - 1) { step++; showStep(); } else tourEnd(); };
 $('tour-prev').onclick = function () { if (step > 0) { step--; showStep(); } };
 $('tour-back').addEventListener('click', function (e) { if (e.target.id === 'tour-back') tourEnd(); });
-document.addEventListener('keydown', function (e) { if (e.key === 'Escape') tourEnd(); });
+document.addEventListener('keydown', function (e) {
+  if (dlgDone) { if (e.key === 'Escape') dlgDone(false); return; }
+  if (e.key === 'Escape') tourEnd();
+});
 addEventListener('resize', function () { if ($('tour-back').style.display === 'block') showStep(); });
 
 (function init() {

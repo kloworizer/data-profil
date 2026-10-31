@@ -259,6 +259,10 @@ REPAIR_LABEL = {
     "comment_line": ("Comment lines skipped", "Baris komentar dilewati"),
     "nul_bytes_removed": ("Invalid null characters removed", "Karakter null tidak valid dihapus"),
     "ocr_page": ("Scanned pages read with text recognition (OCR)", "Halaman hasil pindai dibaca dengan OCR"),
+    "columns_realigned": ("Pages where the columns were detected differently were lined up by position",
+                          "Halaman dengan kolom yang terbaca berbeda disejajarkan menurut posisinya"),
+    "ai_layout": ("AI helped decide the table layout (header rows, page breaks)",
+                  "AI membantu menentukan tata letak tabel (baris judul kolom, pergantian halaman)"),
 }
 
 
@@ -296,6 +300,15 @@ ID_TEMPLATES = {
     "XML records taken from <{tag}> elements.": "Data XML diambil dari elemen <{tag}>.",
     "Table extracted from PDF pages {a}–{b}.": "Tabel diambil dari halaman PDF {a}–{b}.",
     "{n} borderless table(s) detected from text alignment.": "{n} tabel tanpa garis terdeteksi dari perataan teks.",
+    "{n} page(s) read with the TableFormer table-structure model (Docling).":
+        "{n} halaman dibaca dengan model struktur tabel TableFormer (Docling).",
+    "The table-structure model was used on the first {n} unclear pages only.":
+        "Model struktur tabel hanya dipakai pada {n} halaman tidak jelas pertama.",
+    "Table model failed on page {p}: {e}": "Model tabel gagal di halaman {p}: {e}",
+    "Column layout of {n} page(s) worked out by the AI vision model; values come from the PDF text.":
+        "Tata letak kolom {n} halaman ditentukan oleh model AI penglihatan; nilainya diambil dari teks PDF.",
+    "Table continues over {n} pages; the header repeated on each page was removed.":
+        "Tabel berlanjut di {n} halaman; judul kolom yang dicetak ulang di tiap halaman dihapus.",
     "{n} scanned page(s) read with OCR; expect recognition errors.": "{n} halaman pindaian dibaca dengan OCR; mungkin ada salah baca.",
     "No tables found in the PDF; the text layer was parsed as delimited / fixed-width text.":
         "Tidak ada tabel di PDF; teks dibaca sebagai teks berpemisah / lebar tetap.",

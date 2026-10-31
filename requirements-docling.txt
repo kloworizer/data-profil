@@ -1,0 +1,6 @@
+# Optional: Docling (IBM TableFormer) as a second PDF table reader, for borderless and
+# complex tables. Pulls in PyTorch; install the CPU build first to keep it small:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   pip install -r requirements-docling.txt
+#   docling-tools models download layout tableformer -o models/docling
+docling>=2.50

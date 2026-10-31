@@ -6,3 +6,4 @@ samples
 offline_bundle
 **/__pycache__
 *.pyc
+models

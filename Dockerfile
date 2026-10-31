@@ -5,8 +5,11 @@ FROM python:3.12-slim-bookworm
 #                            so Python, Spark and libraries match on every node.
 #                            PYSPARK_VERSION must match the cluster when using an external one.
 # --build-arg WITH_OCR=1   : Tesseract OCR for scanned PDFs.
+# --build-arg WITH_DOCLING=1 : Docling TableFormer (CPU PyTorch) as a second PDF table reader,
+#                            models baked into the image (nothing downloads at runtime).
 ARG WITH_SPARK=0
 ARG WITH_OCR=0
+ARG WITH_DOCLING=0
 ARG PYSPARK_VERSION=3.5.3
 
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
@@ -30,10 +33,15 @@ RUN pkgs=""; \
       rm -rf /var/lib/apt/lists/*; fi
 
 WORKDIR /app
-COPY requirements.txt .
+COPY requirements.txt requirements-docling.txt ./
 RUN pip install --no-cache-dir -r requirements.txt && \
     if [ "$WITH_SPARK" = "1" ]; then pip install --no-cache-dir "pyspark==${PYSPARK_VERSION}"; fi && \
-    if [ "$WITH_OCR" = "1" ]; then pip install --no-cache-dir pytesseract; fi
+    if [ "$WITH_OCR" = "1" ]; then pip install --no-cache-dir pytesseract; fi && \
+    if [ "$WITH_DOCLING" = "1" ]; then \
+      pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu && \
+      pip install --no-cache-dir -r requirements-docling.txt && \
+      docling-tools models download layout tableformer -o /app/models/docling; fi
+ENV AUTOEDA_DOCLING_MODELS=/app/models/docling HF_HUB_OFFLINE=1
 
 COPY autoeda ./autoeda
 COPY scripts ./scripts

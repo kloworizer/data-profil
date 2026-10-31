@@ -7,7 +7,7 @@ import re
 
 import httpx
 
-from . import config
+from . import cancel, config
 from .narrative import compact
 
 SYSTEM = ("You are a senior data analyst writing an exploratory data analysis report. "
@@ -31,23 +31,59 @@ class Ollama:
     def available(self) -> bool:
         return self.model in self.models() or any(m.split(":")[0] == self.model for m in self.models())
 
-    def chat(self, prompt: str, as_json: bool = True) -> str:
+    def has_vision(self) -> bool:
+        """The model can read images (Ollama 'vision' capability)."""
+        if not hasattr(self, "_vision"):
+            try:
+                r = httpx.post(f"{self.host}/api/show", json={"model": self.model}, timeout=10)
+                self._vision = "vision" in (r.json().get("capabilities") or [])
+            except Exception:
+                self._vision = False
+        return self._vision
+
+    def chat(self, prompt: str, as_json: bool = True, temperature: float = 0.2, images: list[str] | None = None) -> str:
+        """images: base64-encoded PNG/JPEG pages for vision models."""
+        user = {"role": "user", "content": prompt}
+        if images:
+            user["images"] = images
         body = {
             "model": self.model, "stream": False,
-            "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": prompt}],
-            "options": {"temperature": 0.2, "num_ctx": 8192},
+            "messages": [{"role": "system", "content": SYSTEM}, user],
+            "options": {"temperature": temperature, "num_ctx": 8192},
         }
         if as_json:
             body["format"] = "json"
         if self._think_ok:
             body["think"] = False   # skip hidden reasoning on thinking models: much faster
-        r = httpx.post(f"{self.host}/api/chat", json=body, timeout=config.LLM_TIMEOUT)
-        if r.status_code == 400 and self._think_ok:
+        cancel.check()
+        try:
+            return self._stream(body)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code != 400 or not self._think_ok:
+                raise
             self._think_ok = False
             body.pop("think", None)
-            r = httpx.post(f"{self.host}/api/chat", json=body, timeout=config.LLM_TIMEOUT)
-        r.raise_for_status()
-        return r.json()["message"]["content"]
+            return self._stream(body)
+
+    def _stream(self, body: dict) -> str:
+        """Streamed request: a stop request aborts the generation between tokens."""
+        body = {**body, "stream": True}
+        out = []
+        with httpx.stream("POST", f"{self.host}/api/chat", json=body, timeout=config.LLM_TIMEOUT) as r:
+            if r.status_code >= 400:
+                r.read()
+                r.raise_for_status()
+            for line in r.iter_lines():
+                cancel.check()
+                if not line.strip():
+                    continue
+                chunk = json.loads(line)
+                if chunk.get("error"):
+                    raise RuntimeError(f"Ollama: {chunk['error']}")
+                out.append((chunk.get("message") or {}).get("content") or "")
+                if chunk.get("done"):
+                    break
+        return "".join(out)
 
 
 def _parse_json(text: str) -> dict:

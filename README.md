@@ -23,7 +23,9 @@ non-technical users:
   is available for cluster deployments.
 * **Messy data**: broken structure is repaired while reading, and every repair is logged
   in the report with examples (see the anomaly catalogue below).
-* **Web UI + REST API + CLI**, Docker-ready.
+* **Web UI + REST API + CLI**, Docker-ready. Running analyses can be **stopped** and **restarted** from the
+  UI (or `POST /api/jobs/{id}/cancel` / `…/restart`); a stopped or failed job keeps its file so it can be
+  run again.
 
 ## Quick start (Windows / laptop, no Docker)
 
@@ -147,8 +149,42 @@ bundle) gives noticeably more reliable narratives than the 2B PoC model.
 | `AUTOEDA_LLM_BATCH`, `AUTOEDA_LLM_MAX_COLUMNS`, `AUTOEDA_LLM_TIMEOUT` | 5, 80, 180 | LLM batching / limits |
 | `AUTOEDA_SPARK_MASTER`, `AUTOEDA_SPARK_CONF`, `AUTOEDA_SPARK_WORK_DIR` | | Spark connection, `k=v;k=v` conf, shared work dir |
 | `AUTOEDA_OCR_LANG` | `eng` | Tesseract language(s) for scanned PDFs, e.g. `ind+eng` |
+| `AUTOEDA_PDF_ENGINE` | `auto` | PDF tables: `auto` (see below), `plumber` (geometry only), `docling` (TableFormer on every page) |
+| `AUTOEDA_DOCLING_MODELS` | `./models/docling` | Docling model folder (nothing is downloaded at runtime) |
+| `AUTOEDA_DOCLING_MAX_PAGES` | `60` | per file; TableFormer takes seconds per page on CPU |
 
 OCR for scanned PDFs is optional: `pip install pytesseract` and install the Tesseract binary.
+
+### How PDF tables are read
+
+Rules and AI work together; every value always comes from the PDF's own text layer.
+
+1. **Ruled tables** (cell borders): the cell geometry from pdfplumber is exact. Merged cells are resolved
+   from it: a cell merged down (a group value) is copied to every row it covers, a group heading merged
+   across columns prefixes its sub-columns (`Sales / 2023`), and a cell merged across a whole body row
+   (a section label) becomes a `section` column.
+2. **Borderless tables**: cells are guessed from text alignment. With Docling installed, the
+   **TableFormer** table-structure model (IBM Docling) reads the page too, and the better reading wins
+   (consistent column types, no values glued together); the local model decides close calls.
+3. **Still unclear** (no header on top, word fragments, glued values) and the Ollama model can read images
+   (`qwen3.5` can): the page image goes to the **vision model once per table**. It returns column names and
+   the first records; every word it returns is checked against the page text, then the column boundaries
+   are measured from the real word positions and applied to all pages of that table.
+4. **Tables over several pages** are stitched: columns are lined up by x-position, the header re-printed on
+   each page is recognised by fuzzy matching (the local model decides borderline rows) and removed, and the
+   rows repeated on every page tell how deep the header is, so a second header level (years, quarters) is
+   never read as data. A page that starts a different table is kept apart.
+
+Docling is optional (it adds PyTorch and ~670 MB of models):
+
+```powershell
+.venv\Scripts\pip install torch --index-url https://download.pytorch.org/whl/cpu
+.venv\Scripts\pip install -r requirements-docling.txt
+.venv\Scripts\docling-tools models download layout tableformer -o models/docling
+```
+
+Docker: `--build-arg WITH_DOCLING=1` (on by default in `docker-compose.yml` and the offline bundle;
+`WITH_DOCLING=0 scripts/offline_bundle.sh` leaves it out).
 
 ## Anomaly catalogue
 
@@ -161,7 +197,8 @@ several records on one line · rows using another delimiter · trailing delimite
 · blank / empty rows · `#` comment lines · unbalanced quotes · quoted multi-line values · backslash-escaped
 quotes · NUL bytes · fixed-width / whitespace-aligned text.
 
-**Excel.** Merged cells (filled) · title rows merged across the sheet · multi-row headers up to 3 levels ·
+**Excel.** Merged cells (a merged group value is copied to every row; a merged title, section label or note
+stays one label) · title rows merged across the sheet · multi-row headers up to 3 levels ·
 **several tables per sheet** (stacked or side by side) · empty spacer rows / columns · total / subtotal /
 grand-total rows (incl. *Jumlah*) · section label rows (*Wilayah: Jawa*) turned into a `section`
 column · footnotes / *Sumber:* / *Catatan* rows · formulas without saved results · hidden sheets ·
@@ -169,8 +206,10 @@ password-protected workbooks · very large sheets (streamed) · Excel serial-num
 scientific notation · wide / pivoted layouts (years as columns) · transposed tables · data truncated at
 the Excel row limit · units / scale in headers (`Harga (Rp)`, *in thousands*).
 
-**PDF.** Ruled and borderless tables · merged cells · tables continuing over pages (repeated
-header blocks removed) · multi-level and wrapped headers · records wrapped over several lines · phantom
+**PDF.** Ruled and borderless tables · merged cells (vertical, horizontal, whole-row section labels) · tables
+continuing over pages (repeated header removed even when read slightly differently, columns lined up when a
+page is detected with a different number of columns) · header rows read as values · multi-level and wrapped
+headers · records wrapped over several lines · phantom
 empty columns · page headers / footers / page numbers · ligatures and full-width characters · text-only
 PDFs · scanned PDFs (OCR) · encrypted PDFs.
 
@@ -209,7 +248,11 @@ autoeda/
     delimited.py    text sniffing, native DuckDB parse + suspect re-check, streaming repair
     repair.py       RowRepairer: type-fit based structural repair
     grid.py         Excel/PDF layout normalisation (multi-table, headers, totals, sections ...)
-    excel.py pdf.py others.py sink.py
+    structure.py    shared layout rules + AI second opinion (header depth, repeated headers, vision layout)
+    pdf.py          PDF tables: merged cells, page stitching, reader choice
+    pdf_docling.py  optional Docling TableFormer reader
+    excel.py others.py sink.py
+  cancel.py         cooperative stop for running jobs (DuckDB / Spark / AI calls interrupted)
   profiling.py      DuckDB column profiler (type inference, stats, anomaly flags)
   spark_engine.py   Spark ingest + profiler (same output)
   llm.py            Ollama client, column descriptions, summary (EN / ID)

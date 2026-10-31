@@ -11,6 +11,8 @@
 #   MODELS="qwen3.5:2b"              Ollama models to include
 #   OLLAMA_MODELS_DIR=~/.ollama/models  copy models from this folder instead of downloading them
 #   PYSPARK_VERSION=3.5.3            must match the production Spark cluster
+#   WITH_DOCLING=1                   Docling TableFormer PDF table reader + its models
+#                                    (about 2 GB larger image; 0 = leave it out)
 #
 # Produces (in out_dir): app_image.tar.gz, ollama_image.tar.gz, ollama_models.tgz,
 # compose files, install_offline.sh, bundle.env, SHA256SUMS
@@ -23,11 +25,13 @@ TAG=${TAG:-autoeda:poc}
 OLLAMA_IMAGE=${OLLAMA_IMAGE:-ollama/ollama:latest}
 MODELS=${MODELS:-qwen3.5:2b}
 PYSPARK_VERSION=${PYSPARK_VERSION:-3.5.3}
+WITH_DOCLING=${WITH_DOCLING:-1}
 mkdir -p "$OUT"
 OUT_ABS=$(cd "$OUT" && { pwd -W 2>/dev/null || pwd; })   # pwd -W: Windows path for Docker Desktop
 
-echo "==> Building $TAG (Spark + OCR)"
-docker build --build-arg WITH_SPARK=1 --build-arg WITH_OCR=1 --build-arg PYSPARK_VERSION="$PYSPARK_VERSION" -t "$TAG" .
+echo "==> Building $TAG (Spark + OCR, Docling=$WITH_DOCLING)"
+docker build --build-arg WITH_SPARK=1 --build-arg WITH_OCR=1 --build-arg WITH_DOCLING="$WITH_DOCLING" \
+  --build-arg PYSPARK_VERSION="$PYSPARK_VERSION" -t "$TAG" .
 
 echo "==> Saving app image"
 docker save "$TAG" | gzip > "$OUT/app_image.tar.gz"

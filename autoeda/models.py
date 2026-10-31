@@ -34,6 +34,8 @@ REPAIR_LABELS = {
     "comment_line": "Comment lines skipped",
     "nul_bytes_removed": "NUL bytes removed",
     "ocr_page": "Pages read with OCR (scanned images)",
+    "columns_realigned": "Columns lined up by position across pages",
+    "ai_layout": "Table layout decided with AI help",
 }
 
 

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from ..models import RepairLog
 from .grid import grid_to_table, grid_to_tables
+from .structure import StructureAI
 
 # Sheets up to this many cells are materialised: enables multi-table detection
 # and exact empty-column removal. Larger sheets are streamed row by row.
@@ -19,16 +20,31 @@ def _safe(s: str) -> str:
     return re.sub(r"[^A-Za-z0-9_-]+", "_", s)[:40] or "sheet"
 
 
-def _filled_rows(rows, merges, r_off: int, c_off: int):
-    """Yield rows with merged ranges filled by their top-left value (streaming)."""
+def _filled_rows(rows, merges, r_off: int, c_off: int, log: RepairLog, labels: dict):
+    """Yield rows with merged ranges filled by their top-left value (streaming).
+
+    A merge that is the only content of its row (a title, a section label such as
+    'Region: West', a note spanning the table) is a label, not a value of every
+    column it covers: it stays in its first cell and its row index goes to
+    `labels` (row -> covered columns). Vertical merges (a group value spanning several records) and
+    merges next to other values (header groups) are copied into every cell."""
     starts = defaultdict(list)
     for (r1, c1), (r2, c2) in merges:
         starts[r1 - r_off].append((r2 - r_off, c1 - c_off, c2 - c_off))
     active = []
     for r, row in enumerate(rows):
         row = list(row)
-        for r2, c1, c2 in starts.get(r, ()):
-            active.append((r2, c1, c2, row[c1] if 0 <= c1 < len(row) else None))
+        new = starts.get(r, ())
+        for r2, c1, c2 in new:
+            v = row[c1] if 0 <= c1 < len(row) else None
+            alone = (c2 > c1 and len(new) == 1 and not active
+                     and all(x in ("", None) for i, x in enumerate(row) if not c1 <= i <= c2))
+            if alone:
+                labels[r] = (c1, c2)
+                continue
+            log.add("merged_cells_filled", r + r_off + 1, f"rows {r + r_off + 1}-{r2 + r_off + 1}, "
+                                                          f"cols {c1 + c_off + 1}-{c2 + c_off + 1}")
+            active.append((r2, c1, c2, v))
         if active:
             for r2, c1, c2, v in active:
                 if c2 >= len(row):
@@ -61,8 +77,10 @@ def _formula_cells(path: Path) -> dict:
     return out
 
 
-def ingest_excel(path: Path, work_dir: Path, name: str, progress=lambda p, m: None):
+def ingest_excel(path: Path, work_dir: Path, name: str, progress=lambda p, m: None, llm=None):
     import python_calamine as pc
+
+    advisor = StructureAI(llm)
 
     try:
         wb = pc.CalamineWorkbook.from_path(str(path))
@@ -87,12 +105,12 @@ def ingest_excel(path: Path, work_dir: Path, name: str, progress=lambda p, m: No
         merges = list(getattr(sh, "merged_cell_ranges", None) or [])
         merged_cols = set()
         for (r1, c1), (r2, c2) in merges:
-            log.add("merged_cells_filled", r1 + 1, f"rows {r1 + 1}-{r2 + 1}, cols {c1 + 1}-{c2 + 1}")
             if r1 < 30:
                 merged_cols.update(range(c1, c2 + 1))
+        labels: dict = {}
         source = {"format": "spreadsheet", "sheet": meta.name}
         if sh.height * sh.width <= MATERIALIZE_MAX_CELLS:
-            grid = list(_filled_rows(sh.to_python(skip_empty_area=False), merges, 0, 0))
+            grid = list(_filled_rows(sh.to_python(skip_empty_area=False), merges, 0, 0, log, labels))
             fcells = formulas.get(meta.name) or ()
             uncached = [(r, c) for r, c in fcells
                         if r < len(grid) and (c >= len(grid[r]) or grid[r][c] in ("", None))]
@@ -106,13 +124,13 @@ def ingest_excel(path: Path, work_dir: Path, name: str, progress=lambda p, m: No
                          "missing in this report.", cols=", ".join(cols[:10]))
                 log.counts["uncached_formulas"] = len(uncached)
             tables += grid_to_tables(grid, work_dir, f"{name}_{si}", meta.name, log, source,
-                                     merged_header_cols=merged_cols)
+                                     merged_header_cols=merged_cols, label_rows=labels, advisor=advisor)
         else:
             log.note("Very large sheet streamed row by row: multi-table detection disabled.")
             r_off, c_off = sh.start or (0, 0)   # iter_rows starts at the first used cell
-            rows = _filled_rows(sh.iter_rows(), merges, r_off, c_off)
+            rows = _filled_rows(sh.iter_rows(), merges, r_off, c_off, log, labels)
             t = grid_to_table(rows, work_dir / f"{name}_{si}.parquet", meta.name, log, source,
-                              merged_header_cols=merged_cols)
+                              merged_header_cols=merged_cols, label_rows=labels, advisor=advisor)
             if t is not None and t.n_rows:
                 tables.append(t)
     return tables

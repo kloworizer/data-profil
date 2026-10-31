@@ -40,6 +40,12 @@ ENGINE = os.getenv("AUTOEDA_ENGINE", "local")
 # Where the Spark engine materialises parsed data (must be reachable by all executors).
 SPARK_WORK_DIR = os.getenv("AUTOEDA_SPARK_WORK_DIR", (DATA_DIR / "spark_work").as_uri())
 MAX_CONCURRENT_JOBS =_int("AUTOEDA_MAX_JOBS", 1)
+# PDF tables: "auto" = geometry reader (pdfplumber) for ruled tables, Docling TableFormer as a
+# second reader for borderless / unclear pages; "plumber" = geometry only; "docling" = Docling
+# on every page that has text.
+PDF_ENGINE = os.getenv("AUTOEDA_PDF_ENGINE", "auto")
+DOCLING_MODELS = Path(os.getenv("AUTOEDA_DOCLING_MODELS", Path(__file__).resolve().parent.parent / "models" / "docling"))
+DOCLING_MAX_PAGES = _int("AUTOEDA_DOCLING_MAX_PAGES", 60)   # per file: Docling takes seconds per page on CPU
 
 
 

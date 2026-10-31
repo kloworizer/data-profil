@@ -24,3 +24,6 @@ certs/*.pem
 .idea/
 .DS_Store
 Thumbs.db
+
+# Docling model files (download with docling-tools, see README)
+models/
