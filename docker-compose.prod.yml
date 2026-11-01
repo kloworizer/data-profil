@@ -34,8 +34,11 @@ services:
       AUTOEDA_THREADS: "64"
       AUTOEDA_MAX_JOBS: "2"
       AUTOEDA_LLM_BATCH: "8"
+      AUTOEDA_LLM_TIMEOUT: "600"      # CPU inference: a page image or a long batch can take minutes
       OLLAMA_HOST: http://localhost:11434
-      OLLAMA_MODEL: qwen3.5:2b        # any model included in the offline bundle (bigger = better narratives)
+      # Mixture-of-experts: 35B parameters, ~3B active per token -> small-model speed on CPU, much
+      # better answers, reads images (PDF table layout). qwen3.5:2b (also bundled) stays selectable in the UI.
+      OLLAMA_MODEL: qwen3.5:35b-a3b
     volumes:
       - /srv/autoeda/data:/data
       - /srv/datasets:/input:ro
@@ -47,6 +50,9 @@ services:
     network_mode: host
     environment:
       OLLAMA_HOST: 127.0.0.1:11434
+      OLLAMA_KEEP_ALIVE: 24h          # keep the 22 GB model loaded between jobs (reloading takes a while)
+      OLLAMA_NUM_PARALLEL: "2"        # = AUTOEDA_MAX_JOBS
+      OLLAMA_MAX_LOADED_MODELS: "2"   # 35b-a3b and 2b side by side (RAM is plentiful)
     volumes:
       - ollama:/root/.ollama
     restart: unless-stopped

@@ -27,3 +27,6 @@ Thumbs.db
 
 # Docling model files (download with docling-tools, see README)
 models/
+
+# Machine-specific docker compose settings
+.env

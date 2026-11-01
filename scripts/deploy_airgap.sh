@@ -13,13 +13,14 @@
 #   --sudo                   run docker with sudo on the server
 #   --skip-build             reuse the existing ./offline_bundle (no rebuild)
 #   --bundle DIR             bundle folder (default: offline_bundle)
-# Env for the bundle build (see offline_bundle.sh): MODELS, OLLAMA_MODELS_DIR, OLLAMA_IMAGE, PYSPARK_VERSION
+# Env for the bundle build (see offline_bundle.sh): MODELS (default "qwen3.5:35b-a3b qwen3.5:2b"),
+#   OLLAMA_MODELS_DIR, OLLAMA_IMAGE, PYSPARK_VERSION, WITH_DOCLING
 #
 # Tip: set up SSH key login first (ssh-keygen; then append the .pub to ~/.ssh/authorized_keys on
 # the server) so you are not asked for the password several times.
 set -euo pipefail
 
-usage() { sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
+usage() { sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
 [ $# -ge 1 ] || usage
 TARGET=$1; shift
 case "$TARGET" in -*) usage ;; esac

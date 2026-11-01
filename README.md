@@ -75,8 +75,10 @@ Verified by running every supported format, plus the Spark engine, inside the co
 **One command from your PC (Git Bash on Windows), over SSH/SCP.** The server needs only Docker and the compose plugin:
 
 ```bash
-# first install: app image + Ollama image + AI models (reuses the models already on this PC)
-OLLAMA_MODELS_DIR="$USERPROFILE/.ollama/models" scripts/deploy_airgap.sh user@server --dir /opt/autoeda
+# first install: app image + Ollama image + AI models, taken from this PC's Ollama model folder
+# (missing models are pulled there first; this PC uses "D:\ollama models", the Ollama default is ~/.ollama/models)
+OLLAMA_MODELS_DIR="/d/ollama models" scripts/deploy_airgap.sh user@server --dir /opt/autoeda \
+  --compose docker-compose.prod.yml
 
 # later updates: only the new app image (~600 MB instead of several GB)
 scripts/deploy_airgap.sh user@server --dir /opt/autoeda --app-only
@@ -88,6 +90,19 @@ images, preloads the models and starts the stack, then runs a health check. Opti
 `--key ~/.ssh/id_ed25519`, `--sudo` (docker needs sudo on the server), `--compose docker-compose.prod.yml`,
 `--skip-build` (resend an existing bundle). Set up SSH key login first (`ssh-keygen`, then add the
 `.pub` file to `~/.ssh/authorized_keys` on the server) to avoid repeated password prompts.
+
+**AI model for the production servers** (3 × 72 CPU cores, 786 GB RAM, no GPU). On CPU, speed depends on
+the parameters used per token, not on RAM, so the bundle includes:
+
+| model | size | why |
+|---|---|---|
+| `qwen3.5:35b-a3b` (production default) | 22 GB | mixture-of-experts, 35B total / ~3B active: roughly the speed of a 3–4B model, far more reliable descriptions, anomaly review and layout decisions; reads images (borderless PDF tables) |
+| `qwen3.5:2b` | 2.7 GB | fast fallback, selectable under *Advanced settings* |
+
+Not chosen: `qwen3.5:27b` (dense, every parameter used per token: about 9× slower on CPU) and
+`qwen3.5:122b-a10b` (its Ollama build has no image input, ~3× slower). Change the set with
+`MODELS="…" scripts/offline_bundle.sh` and the default with `OLLAMA_MODEL` in `docker-compose.prod.yml`.
+The bundle contains only the listed models, not everything in the model folder.
 
 Manual alternative (USB or a transfer zone): `scripts/offline_bundle.sh offline_bundle`, copy the folder,
 then on the server run `./install_offline.sh [docker-compose.prod.yml]`.
@@ -129,8 +144,8 @@ sample in DuckDB on the driver. All full-data statistics run as Spark SQL. The r
 Production sketch (3 nodes × 72 cores / 786 GB): `docker-compose.prod.yml`. Point
 `AUTOEDA_SPARK_MASTER` at the cluster and `AUTOEDA_SPARK_WORK_DIR` at storage every executor can reach.
 Executors need the same Python minor version as the driver (standard library only); the `autoeda`
-package is shipped to them automatically. A larger Ollama model (e.g. 14B–32B, included in the offline
-bundle) gives noticeably more reliable narratives than the 2B PoC model.
+package is shipped to them automatically. The production bundle uses `qwen3.5:35b-a3b` (see Air-gapped
+production), noticeably more reliable than the 2B PoC model.
 
 ## Configuration (environment variables)
 

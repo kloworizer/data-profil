@@ -40,7 +40,7 @@ services:
       AUTOEDA_MEMORY_LIMIT: 3GB                   # DuckDB working memory; spills to /data beyond
       AUTOEDA_THREADS: "4"
       OLLAMA_HOST: ${OLLAMA_HOST:-http://ollama:11434}
-      OLLAMA_MODEL: qwen3.5:2b
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3.5:2b}   # laptop-sized; the production servers use qwen3.5:35b-a3b
       AUTOEDA_SPARK_MASTER: spark://spark-master:7077
       AUTOEDA_SPARK_WORK_DIR: file:///data/spark_work
       AUTOEDA_SPARK_CONF: >-
