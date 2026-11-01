@@ -27,6 +27,7 @@ SPARK_TEXT_EXT = {".csv", ".tsv", ".txt", ".dat", ".psv", ".tab", ".gz", ".bz2",
 SPARK_FORMATS = {".parquet": "parquet", ".orc": "orc", ".json": "json", ".jsonl": "json", ".ndjson": "json"}
 
 _SPARK = None
+_KEY = None      # (master, conf) the session was made with
 
 
 def available() -> bool:
@@ -38,15 +39,19 @@ def available() -> bool:
 
 
 def get_spark():
-    """Create (once) the SparkSession. Master and extra conf come from env:
-    AUTOEDA_SPARK_MASTER (e.g. spark://host:7077, yarn, local[*]) and
-    AUTOEDA_SPARK_CONF ("key=value;key=value")."""
-    global _SPARK
-    if _SPARK is not None:
+    """The SparkSession for config.SPARK_MASTER (e.g. spark://host:7077, yarn, local[*]) and
+    config.SPARK_CONF ("key=value;key=value"), set by AUTOEDA_SPARK_MASTER / AUTOEDA_SPARK_CONF or
+    the Settings page. A changed master or conf starts a new session at the next job."""
+    global _SPARK, _KEY
+    key = (config.SPARK_MASTER, config.SPARK_CONF)
+    if _SPARK is not None and _KEY == key:
         return _SPARK
+    if _SPARK is not None:
+        _SPARK.stop()
+        _SPARK = None
     from pyspark.sql import SparkSession
 
-    master = os.getenv("AUTOEDA_SPARK_MASTER", "local[*]")
+    master = config.SPARK_MASTER
     if master.startswith("local"):
         # single-machine mode: bind to loopback so no hostname resolution / network is needed
         os.environ.setdefault("SPARK_LOCAL_IP", "127.0.0.1")
@@ -55,13 +60,65 @@ def get_spark():
     b = (b.config("spark.sql.ansi.enabled", "false")
           .config("spark.sql.legacy.timeParserPolicy", "CORRECTED")
           .config("spark.sql.adaptive.enabled", "true"))
-    for kv in filter(None, os.getenv("AUTOEDA_SPARK_CONF", "").split(";")):
+    for kv in filter(None, config.SPARK_CONF.split(";")):
         k, _, v = kv.partition("=")
         b = b.config(k.strip(), v.strip())
     spark = b.getOrCreate()
     spark.sparkContext.addPyFile(_package_zip())
-    _SPARK = spark
+    _SPARK, _KEY = spark, key
     return spark
+
+
+def ui_url() -> str:
+    """REST address of the cluster manager: the setting, else the standalone master's web UI."""
+    if config.SPARK_UI_URL:
+        return config.SPARK_UI_URL.rstrip("/")
+    m = config.SPARK_MASTER
+    if m.startswith("spark://"):
+        host = m[len("spark://"):].split(",")[0].split(":")[0]
+        return f"http://{host}:8080"
+    return ""
+
+
+def status() -> dict:
+    """What the configured cluster has (workers, cores, memory, running apps), read from the
+    standalone master's /json or YARN's /ws/v1/cluster/metrics. Never starts a Spark job."""
+    import httpx
+
+    m = config.SPARK_MASTER
+    out = {"master": m, "pyspark": available(), "pyspark_version": None, "ui": ui_url(), "reachable": None,
+           "session": _SPARK is not None and _KEY == (config.SPARK_MASTER, config.SPARK_CONF)}
+    try:
+        import pyspark
+        out["pyspark_version"] = pyspark.__version__
+    except ImportError:
+        pass
+    if m.startswith("local"):
+        out.update(kind="local", reachable=True, cores=os.cpu_count(), workers=1)
+        return out
+    kind = "yarn" if m.startswith("yarn") else "standalone" if m.startswith("spark://") else "other"
+    out["kind"] = kind
+    if not out["ui"]:
+        out["error"] = "Set the cluster web UI address to read its resources."
+        return out
+    try:
+        if kind == "yarn":
+            j = httpx.get(out["ui"] + "/ws/v1/cluster/metrics", timeout=5).json()["clusterMetrics"]
+            out.update(reachable=True, workers=j.get("activeNodes"), cores=j.get("totalVirtualCores"),
+                       cores_used=j.get("allocatedVirtualCores"), memory_mb=j.get("totalMB"),
+                       memory_used_mb=j.get("allocatedMB"), apps_running=j.get("appsRunning"), state="ALIVE")
+        else:
+            j = httpx.get(out["ui"] + "/json/", timeout=5).json()
+            alive = [w for w in j.get("workers", []) if w.get("state") == "ALIVE"]
+            out.update(reachable=True, state=j.get("status"), workers=len(alive), cores=j.get("cores"),
+                       cores_used=j.get("coresused"), memory_mb=j.get("memory"), memory_used_mb=j.get("memoryused"),
+                       apps_running=len(j.get("activeapps", [])),
+                       worker_list=[{"host": w.get("host"), "cores": w.get("cores"), "memory_mb": w.get("memory"),
+                                     "cores_used": w.get("coresused"), "memory_used_mb": w.get("memoryused")}
+                                    for w in alive])
+    except Exception as e:                       # unreachable, wrong address, not JSON
+        out.update(reachable=False, error=f"{type(e).__name__}: {e}"[:300])
+    return out
 
 
 def _package_zip() -> str:
@@ -298,6 +355,9 @@ class SparkProfiler(TableProfiler):
             "num_us": f"({neg} * CAST(regexp_replace({v}, '[^0-9.]', '') AS DOUBLE))",
             "num_eu": f"({neg} * CAST(replace(regexp_replace({v}, '[^0-9,]', ''), ',', '.') AS DOUBLE))",
             "unit": f"CAST(replace(regexp_extract({v}, '^[-+]?[0-9]+([.,][0-9]+)?', 0), ',', '.') AS DOUBLE)",
+            "num_dot3": f"CAST(CASE WHEN {v} RLIKE {slit('^[-+]?[1-9][0-9]{0,2}[.][0-9]{1,2}$')} "
+                        f"THEN concat(split({v}, '[.]')[0], rpad(split({v}, '[.]')[1], 3, '0')) "
+                        f"ELSE replace({v}, '.', '') END AS DOUBLE)",
             "ts": f"CAST({v} AS TIMESTAMP)",
             "ts_fmt": f"coalesce(CAST({v} AS TIMESTAMP), to_timestamp({v}, {slit(_java_fmt(d.get('fmt', '')))}))",
         }.get(d.get("conv"), x)

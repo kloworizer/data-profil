@@ -14,6 +14,9 @@ DATA_DIR = Path(os.getenv("AUTOEDA_DATA_DIR", "./data")).resolve()
 UPLOAD_DIR = DATA_DIR / "uploads"
 WORK_DIR = DATA_DIR / "work"
 REPORT_DIR = DATA_DIR / "reports"
+# Learned skills and the comments behind them: kept across restarts, in a folder that can be a git
+# working copy (default: memory/ in the project, committed and synced with the code).
+MEMORY_DIR = Path(os.getenv("AUTOEDA_MEMORY_DIR", Path(__file__).resolve().parent.parent / "memory")).resolve()
 # Server-side folder users may profile in place (for files too large to upload).
 INPUT_DIR = Path(os.getenv("AUTOEDA_INPUT_DIR", "./input")).resolve()
 
@@ -39,6 +42,18 @@ SLIDE_CHECK =os.getenv("AUTOEDA_SLIDE_CHECK", "1") != "0"
 ENGINE = os.getenv("AUTOEDA_ENGINE", "local")
 # Where the Spark engine materialises parsed data (must be reachable by all executors).
 SPARK_WORK_DIR = os.getenv("AUTOEDA_SPARK_WORK_DIR", (DATA_DIR / "spark_work").as_uri())
+# An existing cluster: spark://host:7077 (standalone), yarn (needs HADOOP_CONF_DIR), or local[*].
+SPARK_MASTER = os.getenv("AUTOEDA_SPARK_MASTER", "local[*]")
+SPARK_CONF = os.getenv("AUTOEDA_SPARK_CONF", "")          # "key=value;key=value"
+# Web UI / REST address the cluster's resources are read from (standalone master :8080, YARN
+# ResourceManager :8088). Empty: derived from SPARK_MASTER for standalone.
+SPARK_UI_URL = os.getenv("AUTOEDA_SPARK_UI", "")
+# HDFS on the host: WebHDFS address (NameNode, e.g. http://namenode:9870) for browsing and for
+# copying files Spark cannot read (Excel, PDF...) into the app; HDFS_ROOT is the hdfs:// prefix
+# shown for picked files (e.g. hdfs://nameservice1).
+HDFS_URL = os.getenv("AUTOEDA_HDFS_URL", "")
+HDFS_USER = os.getenv("AUTOEDA_HDFS_USER", "")
+HDFS_ROOT = os.getenv("AUTOEDA_HDFS_ROOT", "")
 MAX_CONCURRENT_JOBS =_int("AUTOEDA_MAX_JOBS", 1)
 # PDF tables: "auto" = geometry reader (pdfplumber) for ruled tables, Docling TableFormer as a
 # second reader for borderless / unclear pages; "plumber" = geometry only; "docling" = Docling
@@ -46,6 +61,33 @@ MAX_CONCURRENT_JOBS =_int("AUTOEDA_MAX_JOBS", 1)
 PDF_ENGINE = os.getenv("AUTOEDA_PDF_ENGINE", "auto")
 DOCLING_MODELS = Path(os.getenv("AUTOEDA_DOCLING_MODELS", Path(__file__).resolve().parent.parent / "models" / "docling"))
 DOCLING_MAX_PAGES = _int("AUTOEDA_DOCLING_MAX_PAGES", 60)   # per file: Docling takes seconds per page on CPU
+OCR_LANG = os.getenv("AUTOEDA_OCR_LANG", "eng")
+
+
+def _on(name: str, default: bool = True) -> bool:
+    return os.getenv(name, "1" if default else "0").lower() not in ("0", "false", "no", "off")
+
+
+# EDA features (the Settings page switches them; settings.py)
+EDA_DESCRIPTIVE = _on("AUTOEDA_EDA_DESCRIPTIVE")
+EDA_UNIVARIATE = _on("AUTOEDA_EDA_UNIVARIATE")
+EDA_MULTIVARIATE = _on("AUTOEDA_EDA_MULTIVARIATE")
+EDA_QUALITY = _on("AUTOEDA_EDA_QUALITY")
+EDA_DUPLICATES = _on("AUTOEDA_EDA_DUPLICATES")
+AI_DEFAULT_ON = _on("AUTOEDA_AI_DEFAULT_ON")
+AI_TABLE_LAYOUT = _on("AUTOEDA_AI_TABLE_LAYOUT")
+AI_DESCRIPTIONS = _on("AUTOEDA_AI_DESCRIPTIONS")
+AI_SUMMARY = _on("AUTOEDA_AI_SUMMARY")
+AI_ANOMALY_REVIEW = _on("AUTOEDA_AI_ANOMALY_REVIEW")
+MEMORY_ENABLED = _on("AUTOEDA_MEMORY")
+KEEP_UPLOADS = _on("AUTOEDA_KEEP_UPLOADS")      # keep an uploaded file after its report (for 'Run again')
+
+# Sign-in (auth.py). Off only for a single-user laptop: then everyone is the administrator.
+# Not on the Settings page on purpose: switching it off must need access to the server.
+AUTH_ENABLED = _on("AUTOEDA_AUTH")
+ADMIN_USER = os.getenv("AUTOEDA_ADMIN_USER", "admin")
+ADMIN_PASSWORD = os.getenv("AUTOEDA_ADMIN_PASSWORD", "")   # first start only; empty = a random one, logged
+SESSION_HOURS = _int("AUTOEDA_SESSION_HOURS", 12)
 
 
 

@@ -1,165 +1,80 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Data Check</title>
-<style>
-:root {
-  --bg: #f5f6f8; --panel: #fff; --ink: #1c2330; --muted: #5b6475; --line: #e2e5eb;
-  --accent: #2563d9; --accent-soft: #e8effc; --good: #15803d; --good-soft: #e5f5ea;
-  --bad: #c2410c; --bad-soft: #fde8df; --ai: #7c3aed; --ai-soft: #f1eafe;
-}
-@media (prefers-color-scheme: dark) {
-  :root { --bg: #12151b; --panel: #1a1f27; --ink: #e7eaf0; --muted: #9aa3b3; --line: #2c333e;
-    --accent: #7aa7ff; --accent-soft: #1d2a44; --good: #5fcf88; --good-soft: #15301f;
-    --bad: #fb8f63; --bad-soft: #3d1f14; --ai: #b794f6; --ai-soft: #2a2140; }
-}
-* { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-header { background: var(--panel); border-bottom: 1px solid var(--line); }
-.bar { max-width: 920px; margin: 0 auto; padding: 14px 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-.brand { flex: 1; min-width: 200px; }
-.brand b { font-size: 20px; } .brand span { display: block; color: var(--muted); font-size: 14px; }
-main { max-width: 920px; margin: 0 auto; padding: 22px 16px 70px; }
-.btn { border: 1px solid var(--line); background: var(--panel); color: var(--ink); padding: 8px 16px; border-radius: 999px; cursor: pointer; font: inherit; font-size: 15px; }
-.btn:hover { border-color: var(--accent); color: var(--accent); }
-.btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-.btn.big { font-size: 18px; padding: 12px 30px; font-weight: 600; }
-.btn:disabled { opacity: .45; cursor: default; }
-.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
-.seg button { border: 0; background: transparent; color: var(--ink); padding: 8px 13px; cursor: pointer; font: inherit; font-size: 15px; }
-.seg button.on { background: var(--accent); color: #fff; }
-.card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 22px; margin-bottom: 18px; }
-.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 18px; }
-.step { display: flex; gap: 10px; align-items: center; color: var(--muted); font-size: 15px; }
-.step i { font-style: normal; width: 30px; height: 30px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; font-weight: 700; flex: none; }
-.step.on { color: var(--ink); font-weight: 600; } .step.on i { background: var(--accent); color: #fff; }
-#drop { border: 2px dashed var(--line); border-radius: 16px; padding: 40px 16px; text-align: center; cursor: pointer; transition: .15s; }
-#drop:hover, #drop.over { border-color: var(--accent); background: var(--accent-soft); }
-#drop .icon { font-size: 44px; line-height: 1; }
-#drop b { color: var(--accent); font-size: 19px; }
-.sub { color: var(--muted); font-size: 14px; }
-#chosen { display: none; align-items: center; gap: 12px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; margin-top: 14px; }
-#chosen .name { flex: 1; font-weight: 600; word-break: break-all; }
-.opt { display: flex; gap: 10px; align-items: flex-start; margin-top: 16px; padding: 12px 14px; border-radius: 12px; background: var(--ai-soft); }
-.opt input { width: 20px; height: 20px; margin-top: 2px; accent-color: var(--ai); }
-.go { text-align: center; margin-top: 18px; }
-details.adv { margin-top: 16px; }
-details.adv summary { cursor: pointer; color: var(--muted); font-size: 14px; }
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin-top: 12px; }
-label.f { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
-select, input[type=text], input[type=number] { padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--ink); font: inherit; font-size: 15px; width: 100%; }
-.uploadbar { display: none; margin-top: 14px; }
-.track { height: 10px; background: var(--line); border-radius: 5px; overflow: hidden; }
-.track i { display: block; height: 10px; background: var(--accent); width: 0; transition: width .4s; }
-.job { border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; margin-bottom: 12px; }
-.job .top { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-.job .fname { flex: 1; font-weight: 600; word-break: break-all; min-width: 160px; }
-.chip { padding: 2px 10px; border-radius: 999px; font-size: 13px; font-weight: 600; }
-.chip.done { background: var(--good-soft); color: var(--good); }
-.chip.failed { background: var(--bad-soft); color: var(--bad); }
-.chip.running, .chip.queued { background: var(--accent-soft); color: var(--accent); }
-.chip.cancelling, .chip.cancelled { background: var(--line); color: var(--muted); }
-.btn.danger { color: var(--bad); border-color: var(--bad); }
-.btn.danger:hover { background: var(--bad-soft); }
-.btn.primary.danger { background: var(--bad); color: #fff; }
-.btn.sm { padding: 5px 13px; font-size: 14px; }
-.track.stopping i { background: var(--muted); }
-#dlg-back { position: fixed; inset: 0; z-index: 95; background: rgba(10, 14, 22, .55); display: none; align-items: center; justify-content: center; padding: 16px; }
-#dlg-back.open { display: flex; }
-#dlg { width: min(420px, 100%); background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 16px; padding: 22px; box-shadow: 0 12px 40px rgba(0,0,0,.3); }
-#dlg h3 { margin: 0 0 8px; font-size: 18px; }
-#dlg p { margin: 0; color: var(--muted); }
-#dlg .row { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; flex-wrap: wrap; }
-#toasts { position: fixed; z-index: 96; left: 50%; bottom: 20px; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; width: min(460px, calc(100vw - 32px)); pointer-events: none; }
-.toast { pointer-events: auto; display: flex; gap: 10px; align-items: flex-start; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 12px; padding: 12px 14px; box-shadow: 0 8px 28px rgba(0,0,0,.18); animation: toastin .2s ease-out; }
-.toast.bad { border-left-color: var(--bad); } .toast.good { border-left-color: var(--good); }
-.toast span { flex: 1; } .toast .x { font-size: 16px; padding: 0; }
-@keyframes toastin { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-.job .stage { margin: 8px 0 6px; font-size: 15px; }
-.job .actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-.x { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 18px; }
-.err { color: var(--bad); margin-top: 6px; }
-.status { font-size: 13px; color: var(--muted); margin-top: 6px; }
-.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
-.dot.ok { background: var(--good); } .dot.no { background: var(--bad); }
-[hidden] { display: none !important; }
-#tour-back { position: fixed; inset: 0; z-index: 90; display: none; }
-#tour-spot { position: fixed; z-index: 91; border-radius: 16px; box-shadow: 0 0 0 9999px rgba(10, 14, 22, .62); transition: all .25s; pointer-events: none; }
-#tour-card { position: fixed; z-index: 92; width: min(380px, calc(100vw - 32px)); background: var(--panel); border-radius: 14px; padding: 18px; box-shadow: 0 12px 40px rgba(0,0,0,.3); transition: top .25s, left .25s; }
-#tour-card h3 { margin: 0 0 6px; }
-#tour-card .row { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; }
-@media (max-width: 640px) { .steps { grid-template-columns: 1fr; } }
-</style>
-</head>
-<body>
-<header><div class="bar">
-  <div class="brand"><b>📊 <span data-t="app_title" style="display:inline;color:inherit;font-size:inherit"></span></b><span data-t="app_sub"></span></div>
-  <div class="seg" id="langbox"><button data-setlang="en">English</button><button data-setlang="id">Indonesia</button></div>
-  <button class="btn primary" onclick="tourStart()">❓ <span data-t="help"></span></button>
-</div></header>
-
-<main>
-  <div class="steps">
-    <div class="step on" id="s1"><i>1</i><span data-t="step1"></span></div>
-    <div class="step" id="s2"><i>2</i><span data-t="step2"></span></div>
-    <div class="step" id="s3"><i>3</i><span data-t="step3"></span></div>
+{% extends "layout.html" %}
+{% block navextra %}<div class="navbar-item"><button class="button is-small is-link" onclick="tourStart()">❓&nbsp;<span data-t="help"></span></button></div>{% endblock %}
+{% block content %}
+  <div class="steps3">
+    <div class="st on" id="s1"><i>1</i><span data-t="step1"></span></div>
+    <div class="st" id="s2"><i>2</i><span data-t="step2"></span></div>
+    <div class="st" id="s3"><i>3</i><span data-t="step3"></span></div>
   </div>
 
-  <section class="card" id="t-upload">
+  <section class="box" id="t-upload">
     <div id="drop" onclick="document.getElementById('file').click()">
-      <div class="icon">📁</div>
+      <div class="icon-big">📁</div>
       <div><b data-t="drop_title"></b></div>
       <div class="sub" data-t="drop_sub"></div>
-      <div class="sub" style="margin-top:8px" data-t="formats"></div>
+      <div class="sub mt-2" data-t="formats"></div>
       <input type="file" id="file" hidden onchange="choose(this.files[0])">
     </div>
-    <div id="chosen"><span style="font-size:26px">📄</span><span class="name" id="chosen-name"></span><span class="sub" id="chosen-size"></span>
-      <button class="x" title="✕" onclick="clearFile()">✕</button></div>
+    <div class="notification is-link is-light mt-4 mb-0" id="chosen" hidden>
+      <button class="delete" onclick="clearFile()" aria-label="✕"></button>
+      📄 <b id="chosen-name"></b> <span class="sub" id="chosen-size"></span>
+    </div>
 
-    <label class="opt" id="t-ai"><input type="checkbox" id="useLlm" checked>
+    <label class="ai-opt" id="t-ai"><input type="checkbox" id="useLlm" checked>
       <span><b data-t="ai_opt"></b><br><span class="sub" data-t="ai_opt_sub"></span><br><span class="sub" id="ai-state"></span></span></label>
 
-    <div class="go" id="t-go"><button class="btn primary big" id="goBtn" onclick="analyze()" disabled>▶ <span data-t="analyze"></span></button>
-      <div class="sub" style="margin-top:6px" data-t="go_hint"></div></div>
-    <div class="uploadbar" id="upbar"><div class="sub" id="uptext"></div><div class="track"><i id="upfill"></i></div></div>
+    <div class="has-text-centered mt-5" id="t-go"><button class="button is-link is-medium" id="goBtn" onclick="analyze()" disabled>▶&nbsp;<span data-t="analyze"></span></button>
+      <p class="sub mt-2" data-t="go_hint"></p></div>
+    <div class="mt-4" id="upbar" hidden><p class="sub" id="uptext"></p><progress class="progress is-link" id="upfill" value="0" max="100"></progress></div>
 
-    <details class="adv"><summary data-t="advanced"></summary>
-      <p class="sub" data-t="adv_hint"></p>
-      <div class="grid">
-        <label class="f"><span data-t="engine"></span>
-          <select id="engine"><option value="local" data-t="engine_local"></option><option value="spark" data-t="engine_spark"></option></select></label>
-        <label class="f"><span data-t="model"></span><select id="model"></select></label>
-        <label class="f"><span data-t="row_limit"></span><input type="number" id="maxRows" value="0" min="0" step="100000"></label>
+    <details class="mt-4"><summary class="sub" style="cursor:pointer" data-t="advanced"></summary>
+      <p class="sub mt-2" data-t="adv_hint"></p>
+      <div class="columns is-multiline mt-1">
+        <div class="column is-4"><label class="label is-small" data-t="engine"></label>
+          <div class="select is-fullwidth"><select id="engine"><option value="local" data-t="engine_local"></option><option value="spark" data-t="engine_spark"></option></select></div></div>
+        <div class="column is-4"><label class="label is-small" data-t="model"></label><div class="select is-fullwidth"><select id="model"></select></div></div>
+        <div class="column is-4"><label class="label is-small" data-t="row_limit"></label><input class="input" type="number" id="maxRows" value="0" min="0" step="100000"></div>
       </div>
-      <div style="margin-top:14px"><b data-t="server_file"></b><div class="sub" data-t="server_hint"></div>
-        <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
-          <input type="text" id="path" list="inputFiles" style="flex:1;min-width:200px"><datalist id="inputFiles"></datalist>
-          <button class="btn" onclick="fromPath()" data-t="analyze"></button></div>
-        <div class="sub" id="inputDir"></div></div>
-      <div class="status" id="sysstate"></div>
+      <label class="label is-small mb-0" data-t="server_file"></label><p class="sub" data-t="server_hint"></p>
+      <div class="field has-addons mt-2">
+        <div class="control is-expanded"><input class="input" type="text" id="path" list="inputFiles"><datalist id="inputFiles"></datalist></div>
+        <div class="control" id="hdfs-btn" hidden><button class="button" onclick="hdfsOpen()">🐘&nbsp;<span data-t="hdfs_browse"></span></button></div>
+        <div class="control"><button class="button is-link" onclick="fromPath()" data-t="analyze"></button></div>
+      </div>
+      <p class="sub" data-t="hdfs_hint"></p>
+      <p class="sub" id="inputDir"></p>
+      <p class="sub mt-2" id="sysstate"></p>
     </details>
   </section>
 
-  <section class="card" id="t-jobs">
-    <h2 style="margin:0 0 12px;font-size:20px" data-t="my_reports"></h2>
+  <section class="box" id="t-jobs">
+    <div class="is-flex is-justify-content-space-between is-align-items-center mb-3">
+      <h2 class="title is-5 mb-0" data-t="my_reports"></h2>
+      <a class="button is-small" href="/files">🗂&nbsp;<span data-t="manage_files"></span></a>
+    </div>
     <div id="jobs"><p class="sub" data-t="no_jobs"></p></div>
   </section>
-</main>
 
-<div id="dlg-back" role="presentation"><div id="dlg" role="dialog" aria-modal="true" aria-labelledby="dlg-title" aria-describedby="dlg-text">
-  <h3 id="dlg-title"></h3><p id="dlg-text"></p>
-  <div class="row"><button class="btn" id="dlg-no"></button><button class="btn primary" id="dlg-yes"></button></div></div></div>
-<div id="toasts" aria-live="polite"></div>
+<div class="modal" id="hdfs">
+  <div class="modal-background" onclick="hdfsClose()"></div>
+  <div class="modal-card" style="width:min(760px, calc(100vw - 32px))">
+    <header class="modal-card-head"><p class="modal-card-title">🐘 HDFS</p><button class="delete" onclick="hdfsClose()" aria-label="close"></button></header>
+    <section class="modal-card-body">
+      <nav class="breadcrumb mb-3" id="hdfs-crumbs"><ul></ul></nav>
+      <table class="table is-fullwidth is-hoverable is-narrow"><tbody id="hdfs-rows"></tbody></table>
+      <p class="sub" id="hdfs-msg"></p>
+    </section>
+  </div>
+</div>
 
 <div id="tour-back"><div id="tour-spot"></div><div id="tour-card"><h3 id="tour-title"></h3><div id="tour-text"></div>
-  <div class="row"><span class="sub" id="tour-dots"></span><span><button class="btn" id="tour-prev"></button> <button class="btn primary" id="tour-next"></button></span></div></div></div>
-
+  <div class="row"><span class="sub" id="tour-dots"></span><span class="buttons mb-0"><button class="button is-small" id="tour-prev"></button><button class="button is-small is-link" id="tour-next"></button></span></div></div></div>
+{% endblock %}
+{% block script %}
 <script>
-var T = {
+addT({
  en: {
-  app_title: 'Data Check', app_sub: 'Understand any data file in minutes — no coding needed',
+  app_sub: 'Understand any data file in minutes — no coding needed',
   help: 'Help', step1: 'Choose your file', step2: 'Click Analyze', step3: 'Open your report',
   drop_title: 'Click here to choose a file', drop_sub: 'or drag and drop it here',
   formats: 'Excel, CSV, PDF, text, JSON, Parquet and more · large files are fine',
@@ -170,13 +85,17 @@ var T = {
   engine: 'Processing engine', engine_local: 'This server (recommended)', engine_spark: 'Spark cluster (very large files)',
   model: 'AI model', row_limit: 'Only read the first N rows (0 = all)',
   server_file: 'File already on the server', server_hint: 'For very large files placed in the shared input folder by IT.',
-  my_reports: 'My reports', no_jobs: 'Your reports will appear here.',
+  hdfs_browse: 'Browse HDFS', hdfs_hint: 'HDFS files work too (hdfs://…): with the Spark engine CSV, Parquet, ORC and JSON are read on the cluster directly; other files are copied into the app first.',
+  hdfs_empty: 'This folder is empty.', hdfs_err: 'HDFS could not be read: ', hdfs_pick: 'Chosen: {p}. Pick the engine and click Analyze.',
+  my_reports: 'My reports', no_jobs: 'Your reports will appear here.', manage_files: 'Manage files & space',
+  drop_file: 'Delete file, keep report', file_deleted: 'File deleted to free space; the report stays.',
+  confirm_drop_t: 'Delete the uploaded file?', confirm_drop: 'The report stays, but this analysis can no longer be run again. Frees {size}.', drop_yes: 'Delete file', toast_dropped: 'File deleted. The report is kept.',
   uploading: 'Sending your file… {p}', st_queued: 'Waiting', st_running: 'Working', st_done: 'Ready', st_failed: 'Problem',
   stage_queue: 'Waiting for the previous file to finish…', stage_read: 'Reading your file…',
   stage_fix: 'Checking the layout and fixing problems…', stage_cols: 'Studying each column…',
   stage_ai: 'AI is reviewing values and writing explanations…', stage_report: 'Preparing your report…',
-  open: 'Open report', download: 'Download', del: 'Remove', details: 'technical details',
-  tables: '{n} table(s) · {rows} rows · {cols} columns', took: 'took {s}',
+  open: 'Open report', download: 'Download', pdf: 'PDF', del: 'Remove', details: 'technical details',
+  tables: '{n} table(s) · {rows} rows · {cols} columns', took: 'took {s}', by: 'by {u}',
   err_generic: 'We could not analyze this file.', err_pwd: 'The file is password-protected. Please remove the password and try again.',
   err_scan: 'This PDF is a scanned image without text. Ask IT to enable text recognition (OCR), or use the original file.',
   err_fmt: 'This kind of file is not supported. Try Excel, CSV, PDF or text.', err_empty: 'The file is empty.',
@@ -184,22 +103,21 @@ var T = {
   sys_ok: 'System ready', sys_engine: 'engine',
   st_cancelling: 'Stopping', st_cancelled: 'Stopped', stage_stopping: 'Stopping… this takes a moment.',
   stopped_msg: 'You stopped this analysis.', stop: 'Stop', restart: 'Restart', retry: 'Try again', run_again: 'Run again',
-  keep: 'Keep going', cancel: 'Cancel', ok: 'OK',
-  confirm_del_t: 'Remove this report?', confirm_del: 'The report will be deleted from this server. This cannot be undone.', del_yes: 'Remove',
+  confirm_del_t: 'Remove this report?', confirm_del: 'The report and its uploaded file will be deleted from this server. This cannot be undone.', del_yes: 'Remove',
   confirm_stop_t: 'Stop this analysis?', confirm_stop: 'Work done so far on this file is discarded. You can restart it later.', stop_yes: 'Stop analysis',
   confirm_restart_t: 'Start over?', confirm_restart: 'The analysis that is running now will be stopped and started again from the beginning.', restart_yes: 'Start over',
+  confirm_rerun_t: 'Run this analysis again?', confirm_rerun: 'The file is analysed again with the current version of the app. The new report replaces this one.', rerun_yes: 'Run again',
   toast_stopped: 'Stopping the analysis…', toast_restarted: 'The analysis starts again.', err_gone: 'The original file is no longer on the server. Please choose it again.',
-  err_action: 'That did not work. Please try again.',
   next: 'Next', prev: 'Back', done: 'Got it',
   tour: [
    ['#t-upload', '1. Choose your file', 'Click the box or drag your file into it. Excel, CSV, PDF and many other files work, even very large ones.'],
    ['#t-ai', '2. AI explanations', 'Keep this on to get plain-language explanations and extra checks by AI. Your data never leaves this server.'],
    ['#t-go', '3. Analyze', 'Click Analyze. Small files take seconds, big files a few minutes.'],
-   ['#t-jobs', '4. Your reports', 'Progress and finished reports appear here. Click "Open report" to read it, or "Download" to keep or share it.'],
+   ['#t-jobs', '4. Your reports', 'Progress and finished reports appear here. Open a report to read it, download it, or save it as PDF. "Manage files" shows the space your uploads take.'],
    ['#langbox', '5. Language & help', 'Switch between English and Bahasa Indonesia at any time. Click Help to see this guide again.']]
  },
  id: {
-  app_title: 'Cek Data', app_sub: 'Pahami file data apa pun dalam hitungan menit — tanpa coding',
+  app_sub: 'Pahami file data apa pun dalam hitungan menit — tanpa coding',
   help: 'Bantuan', step1: 'Pilih file Anda', step2: 'Klik Analisis', step3: 'Buka laporan',
   drop_title: 'Klik di sini untuk memilih file', drop_sub: 'atau seret dan lepaskan file ke sini',
   formats: 'Excel, CSV, PDF, teks, JSON, Parquet, dan lainnya · file besar tidak masalah',
@@ -210,13 +128,17 @@ var T = {
   engine: 'Mesin pemrosesan', engine_local: 'Server ini (disarankan)', engine_spark: 'Klaster Spark (file sangat besar)',
   model: 'Model AI', row_limit: 'Hanya baca N baris pertama (0 = semua)',
   server_file: 'File yang sudah ada di server', server_hint: 'Untuk file sangat besar yang diletakkan tim IT di folder input bersama.',
-  my_reports: 'Laporan saya', no_jobs: 'Laporan Anda akan muncul di sini.',
+  hdfs_browse: 'Telusuri HDFS', hdfs_hint: 'File HDFS juga bisa (hdfs://…): dengan mesin Spark, CSV, Parquet, ORC, dan JSON dibaca langsung di klaster; file lain disalin ke aplikasi dulu.',
+  hdfs_empty: 'Folder ini kosong.', hdfs_err: 'HDFS tidak dapat dibaca: ', hdfs_pick: 'Dipilih: {p}. Pilih mesin lalu klik Analisis.',
+  my_reports: 'Laporan saya', no_jobs: 'Laporan Anda akan muncul di sini.', manage_files: 'Kelola file & ruang',
+  drop_file: 'Hapus file, simpan laporan', file_deleted: 'File dihapus untuk menghemat ruang; laporan tetap ada.',
+  confirm_drop_t: 'Hapus file yang diunggah?', confirm_drop: 'Laporan tetap ada, tetapi analisis ini tidak bisa dijalankan lagi. Membebaskan {size}.', drop_yes: 'Hapus file', toast_dropped: 'File dihapus. Laporan tetap disimpan.',
   uploading: 'Mengirim file Anda… {p}', st_queued: 'Menunggu', st_running: 'Diproses', st_done: 'Siap', st_failed: 'Bermasalah',
   stage_queue: 'Menunggu file sebelumnya selesai…', stage_read: 'Membaca file Anda…',
   stage_fix: 'Memeriksa tata letak dan memperbaiki masalah…', stage_cols: 'Mempelajari setiap kolom…',
   stage_ai: 'AI sedang memeriksa nilai dan menulis penjelasan…', stage_report: 'Menyiapkan laporan Anda…',
-  open: 'Buka laporan', download: 'Unduh', del: 'Hapus', details: 'detail teknis',
-  tables: '{n} tabel · {rows} baris · {cols} kolom', took: 'selama {s}',
+  open: 'Buka laporan', download: 'Unduh', pdf: 'PDF', del: 'Hapus', details: 'detail teknis',
+  tables: '{n} tabel · {rows} baris · {cols} kolom', took: 'selama {s}', by: 'oleh {u}',
   err_generic: 'File ini tidak bisa dianalisis.', err_pwd: 'File dilindungi kata sandi. Hapus kata sandinya lalu coba lagi.',
   err_scan: 'PDF ini berupa gambar hasil pindai tanpa teks. Minta tim IT mengaktifkan pengenalan teks (OCR), atau gunakan file aslinya.',
   err_fmt: 'Jenis file ini belum didukung. Coba Excel, CSV, PDF, atau teks.', err_empty: 'File kosong.',
@@ -224,40 +146,29 @@ var T = {
   sys_ok: 'Sistem siap', sys_engine: 'mesin',
   st_cancelling: 'Menghentikan', st_cancelled: 'Dihentikan', stage_stopping: 'Menghentikan… mohon tunggu sebentar.',
   stopped_msg: 'Anda menghentikan analisis ini.', stop: 'Hentikan', restart: 'Mulai ulang', retry: 'Coba lagi', run_again: 'Jalankan lagi',
-  keep: 'Lanjutkan', cancel: 'Batal', ok: 'OK',
-  confirm_del_t: 'Hapus laporan ini?', confirm_del: 'Laporan akan dihapus dari server ini. Tindakan ini tidak bisa dibatalkan.', del_yes: 'Hapus',
+  confirm_del_t: 'Hapus laporan ini?', confirm_del: 'Laporan dan file unggahannya akan dihapus dari server ini. Tindakan ini tidak bisa dibatalkan.', del_yes: 'Hapus',
   confirm_stop_t: 'Hentikan analisis ini?', confirm_stop: 'Pekerjaan yang sudah berjalan untuk file ini dibuang. Anda bisa memulainya lagi nanti.', stop_yes: 'Hentikan analisis',
   confirm_restart_t: 'Mulai dari awal?', confirm_restart: 'Analisis yang sedang berjalan akan dihentikan lalu dimulai lagi dari awal.', restart_yes: 'Mulai dari awal',
+  confirm_rerun_t: 'Jalankan analisis ini lagi?', confirm_rerun: 'File dianalisis ulang dengan versi aplikasi saat ini. Laporan baru menggantikan laporan ini.', rerun_yes: 'Jalankan lagi',
   toast_stopped: 'Menghentikan analisis…', toast_restarted: 'Analisis dimulai lagi.', err_gone: 'File asli sudah tidak ada di server. Silakan pilih file itu lagi.',
-  err_action: 'Gagal. Silakan coba lagi.',
   next: 'Lanjut', prev: 'Kembali', done: 'Mengerti',
   tour: [
    ['#t-upload', '1. Pilih file', 'Klik kotak ini atau seret file Anda ke dalamnya. Excel, CSV, PDF, dan banyak jenis file lain bisa, termasuk yang sangat besar.'],
    ['#t-ai', '2. Penjelasan AI', 'Biarkan aktif untuk mendapat penjelasan sederhana dan pemeriksaan tambahan oleh AI. Data Anda tidak pernah keluar dari server ini.'],
    ['#t-go', '3. Analisis', 'Klik Analisis. File kecil selesai dalam hitungan detik, file besar beberapa menit.'],
-   ['#t-jobs', '4. Laporan Anda', 'Kemajuan dan laporan yang selesai muncul di sini. Klik "Buka laporan" untuk membaca, atau "Unduh" untuk menyimpan atau membagikan.'],
+   ['#t-jobs', '4. Laporan Anda', 'Kemajuan dan laporan yang selesai muncul di sini. Buka laporan untuk membaca, unduh, atau simpan sebagai PDF. "Kelola file" menunjukkan ruang yang dipakai unggahan Anda.'],
    ['#langbox', '5. Bahasa & bantuan', 'Ganti antara English dan Bahasa Indonesia kapan saja. Klik Bantuan untuk melihat panduan ini lagi.']]
  }
-};
-var $ = function (id) { return document.getElementById(id); };
-var LANG = 'en', FILE = null, AI_OK = false, step = 0;
-function t(k, p) { var s = (T[LANG][k] !== undefined ? T[LANG][k] : T.en[k]) || k; if (p) for (var x in p) s = s.replace('{' + x + '}', p[x]); return s; }
-function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
-function num(n) { return Number(n).toLocaleString(LANG === 'id' ? 'id-ID' : 'en-US'); }
-function bytes(n) { if (n == null) return ''; var u = ['B','KB','MB','GB','TB'], i = 0; while (n >= 1024 && i < 4) { n /= 1024; i++; } return n.toLocaleString(LANG === 'id' ? 'id-ID' : 'en-US', {maximumFractionDigits: i ? 1 : 0}) + ' ' + u[i]; }
-function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
+});
+var FILE = null, AI_OK = false, step = 0;
 
-function setLang(l) {
-  LANG = l; document.documentElement.lang = l; store('autoeda-lang', l);
-  document.querySelectorAll('[data-t]').forEach(function (el) { el.textContent = t(el.dataset.t); });
-  document.querySelectorAll('[data-setlang]').forEach(function (b) { b.classList.toggle('on', b.dataset.setlang === l); });
+function onLang() {
   $('ai-state').textContent = AI_OK ? '● ' + t('ai_on') : '○ ' + t('ai_off');
   document.title = t('app_title');
   if (FILE) $('chosen-size').textContent = bytes(FILE.size);
-  refresh();
+  refresh(true);
   if ($('tour-back').style.display === 'block') showStep();
 }
-document.querySelectorAll('[data-setlang]').forEach(function (b) { b.onclick = function () { setLang(b.dataset.setlang); }; });
 
 var drop = $('drop');
 ['dragenter', 'dragover'].forEach(function (e) { drop.addEventListener(e, function (ev) { ev.preventDefault(); drop.classList.add('over'); }); });
@@ -268,29 +179,30 @@ function setStep(n) { [1, 2, 3].forEach(function (i) { $('s' + i).classList.togg
 function choose(f) {
   if (!f) return; FILE = f;
   $('chosen-name').textContent = f.name; $('chosen-size').textContent = bytes(f.size);
-  $('chosen').style.display = 'flex'; drop.style.display = 'none'; $('goBtn').disabled = false; setStep(2);
+  $('chosen').hidden = false; drop.hidden = true; $('goBtn').disabled = false; setStep(2);
 }
-function clearFile() { FILE = null; $('file').value = ''; $('chosen').style.display = 'none'; drop.style.display = ''; $('goBtn').disabled = true; setStep(1); }
+function clearFile() { FILE = null; $('file').value = ''; $('chosen').hidden = true; drop.hidden = false; $('goBtn').disabled = true; setStep(1); }
 function opts() { return { engine: $('engine').value, use_llm: $('useLlm').checked && AI_OK, model: $('model').value, max_rows: parseInt($('maxRows').value || '0', 10), lang: LANG }; }
 
 function analyze() {
   if (!FILE) return;
   var o = opts(), q = new URLSearchParams({ filename: FILE.name, engine: o.engine, use_llm: o.use_llm, model: o.model, max_rows: o.max_rows, lang: o.lang });
   var xhr = new XMLHttpRequest(); xhr.open('PUT', '/api/upload?' + q.toString());
-  $('upbar').style.display = 'block'; $('goBtn').disabled = true;
+  $('upbar').hidden = false; $('goBtn').disabled = true; $('goBtn').classList.add('is-loading');
   xhr.upload.onprogress = function (e) { if (!e.lengthComputable) return; var p = e.loaded / e.total;
-    $('upfill').style.width = (100 * p).toFixed(1) + '%'; $('uptext').textContent = t('uploading', { p: Math.round(100 * p) + '%' }); };
-  xhr.onload = function () { $('upbar').style.display = 'none';
+    $('upfill').value = (100 * p).toFixed(1); $('uptext').textContent = t('uploading', { p: Math.round(100 * p) + '%' }); };
+  xhr.onload = function () { $('upbar').hidden = true; $('goBtn').classList.remove('is-loading');
+    if (xhr.status === 401) { location.href = '/login?next=/'; return; }
     if (xhr.status >= 300) { toast(t('err_upload'), 'bad'); $('goBtn').disabled = false; return; }
-    clearFile(); setStep(3); refresh(); $('t-jobs').scrollIntoView({ behavior: 'smooth' }); };
-  xhr.onerror = function () { $('upbar').style.display = 'none'; $('goBtn').disabled = false; toast(t('err_upload'), 'bad'); };
+    clearFile(); setStep(3); refresh(true); $('t-jobs').scrollIntoView({ behavior: 'smooth' }); };
+  xhr.onerror = function () { $('upbar').hidden = true; $('goBtn').disabled = false; $('goBtn').classList.remove('is-loading'); toast(t('err_upload'), 'bad'); };
   xhr.send(FILE);
 }
 function fromPath() {
   var path = $('path').value.trim(); if (!path) return;
   var o = opts(); o.path = path;
   fetch('/api/path', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(o) })
-    .then(function (r) { return r.json().then(function (j) { if (!r.ok) toast(j.detail || t('err_generic'), 'bad'); else { setStep(3); refresh(); } }); })
+    .then(function (r) { return r.json().then(function (j) { if (!r.ok) toast(j.detail || t('err_generic'), 'bad'); else { setStep(3); refresh(true); } }); })
     .catch(function () { toast(t('err_generic'), 'bad'); });
 }
 function stage(j) {
@@ -308,32 +220,6 @@ function friendlyError(m) {
   return t('err_generic');
 }
 function dur(s) { s = Math.round(s || 0); return s < 60 ? s + ' s' : Math.floor(s / 60) + ' min ' + (s % 60) + ' s'; }
-// --- in-page dialog and notices (instead of the browser's alert / confirm) ---------------
-var dlgDone = null, dlgFocus = null;
-function ask(title, text, yes, danger) {
-  return new Promise(function (resolve) {
-    dlgFocus = document.activeElement;
-    $('dlg-title').textContent = title; $('dlg-text').textContent = text;
-    $('dlg-yes').textContent = yes; $('dlg-no').textContent = t('cancel');
-    $('dlg-yes').classList.toggle('danger', !!danger);
-    $('dlg-back').classList.add('open');
-    dlgDone = function (v) { $('dlg-back').classList.remove('open'); dlgDone = null; if (dlgFocus) dlgFocus.focus(); resolve(v); };
-    $('dlg-no').focus();
-  });
-}
-$('dlg-yes').onclick = function () { if (dlgDone) dlgDone(true); };
-$('dlg-no').onclick = function () { if (dlgDone) dlgDone(false); };
-$('dlg-back').addEventListener('click', function (e) { if (e.target.id === 'dlg-back' && dlgDone) dlgDone(false); });
-function toast(msg, kind) {
-  var el = document.createElement('div');
-  el.className = 'toast ' + (kind || ''); el.setAttribute('role', kind === 'bad' ? 'alert' : 'status');
-  el.innerHTML = '<span></span><button class="x" aria-label="' + esc(t('ok')) + '">✕</button>';
-  el.firstChild.textContent = msg;
-  var close = function () { if (el.parentNode) el.parentNode.removeChild(el); };
-  el.lastChild.onclick = close;
-  $('toasts').appendChild(el);
-  setTimeout(close, kind === 'bad' ? 9000 : 4500);
-}
 function jobAction(id, action, okMsg) {
   return fetch('/api/jobs/' + id + (action === 'delete' ? '' : '/' + action), { method: action === 'delete' ? 'DELETE' : 'POST' })
     .then(function (r) {
@@ -341,51 +227,91 @@ function jobAction(id, action, okMsg) {
       toast(r.status === 410 ? t('err_gone') : t('err_action'), 'bad'); refresh(true);
     }).catch(function () { toast(t('err_action'), 'bad'); });
 }
+function dropFile(id, size) {
+  ask(t('confirm_drop_t'), t('confirm_drop', { size: bytes(size) || '' }), t('drop_yes'), true)
+    .then(function (ok) { if (ok) jobAction(id, 'drop-file', t('toast_dropped')); });
+}
 function delJob(id) { ask(t('confirm_del_t'), t('confirm_del'), t('del_yes'), true).then(function (ok) { if (ok) jobAction(id, 'delete'); }); }
 function stopJob(id) { ask(t('confirm_stop_t'), t('confirm_stop'), t('stop_yes'), true).then(function (ok) { if (ok) jobAction(id, 'cancel', t('toast_stopped')); }); }
-function restartJob(id, running) {
+function restartJob(id, running, done) {
+  if (done) return ask(t('confirm_rerun_t'), t('confirm_rerun'), t('rerun_yes')).then(function (ok) { if (ok) jobAction(id, 'restart', t('toast_restarted')); });
   if (!running) return jobAction(id, 'restart', t('toast_restarted'));
   ask(t('confirm_restart_t'), t('confirm_restart'), t('restart_yes')).then(function (ok) { if (ok) jobAction(id, 'restart', t('toast_restarted')); });
 }
+var CHIP = { done: 'is-success', failed: 'is-danger', running: 'is-link', queued: 'is-link', cancelling: '', cancelled: '' };
 
 var busy = false;
 function refresh(force) {
   if (busy && !force) return; busy = true;
-  fetch('/api/jobs').then(function (r) { return r.json(); }).then(function (jobs) {
+  return fetch('/api/jobs').then(function (r) { return r.json(); }).then(function (jobs) {
     busy = false;
     if (!jobs.length) { $('jobs').innerHTML = '<p class="sub">' + esc(t('no_jobs')) + '</p>'; return; }
     $('jobs').innerHTML = jobs.map(function (j) {
       var pct = Math.round((j.progress || 0) * 100), body = '', id = "'" + j.id + "'";
       var running = j.status === 'queued' || j.status === 'running';
-      var again = j.can_restart ? '<button class="btn sm" onclick="restartJob(' + id + ', false)">↻ ' +
-        esc(t(j.status === 'done' ? 'run_again' : 'retry')) + '</button>' : '';
+      var again = (j.can_restart ? '<button class="button is-small" onclick="restartJob(' + id + ', false, ' + (j.status === 'done') + ')">↻&nbsp;' +
+        esc(t(j.status === 'done' ? 'run_again' : 'retry')) + '</button>' : '') +
+        (j.stored && !running && j.status !== 'cancelling' ? '<button class="button is-small" onclick="dropFile(' + id + ', ' + (j.size || 0) + ')">🗑&nbsp;' +
+        esc(t('drop_file')) + '</button>' : '') +
+        (j.file_deleted ? '<span class="sub">' + esc(t('file_deleted')) + '</span>' : '');
       if (j.status === 'done') {
         var rows = 0, cols = 0; (j.tables || []).forEach(function (x) { rows += x.rows; cols += x.cols; });
         body = '<div class="sub">' + esc(t('tables', { n: (j.tables || []).length, rows: num(rows), cols: num(cols) })) + ' · ' + esc(t('took', { s: dur(j.elapsed_s) })) + '</div>' +
-          '<div class="actions"><a class="btn primary" href="/reports/' + j.id + '" target="_blank">📖 ' + esc(t('open')) + '</a>' +
-          '<a class="btn" href="/reports/' + j.id + '?download=1">⬇ ' + esc(t('download')) + '</a>' + again + '</div>';
+          '<div class="buttons"><a class="button is-link is-small" href="/reports/' + j.id + '" target="_blank">📖&nbsp;' + esc(t('open')) + '</a>' +
+          '<a class="button is-small" href="/reports/' + j.id + '?download=1">⬇&nbsp;' + esc(t('download')) + '</a>' +
+          '<a class="button is-small" href="/reports/' + j.id + '#print" target="_blank">🖨&nbsp;' + esc(t('pdf')) + '</a>' + again + '</div>';
       } else if (j.status === 'failed') {
-        body = '<div class="err">' + esc(friendlyError(j.message)) + '</div><details class="sub"><summary>' + esc(t('details')) + '</summary>' + esc(j.message) + '</details>' +
-          (again ? '<div class="actions">' + again + '</div>' : '');
+        body = '<p class="has-text-danger mt-1">' + esc(friendlyError(j.message)) + '</p><details class="sub"><summary>' + esc(t('details')) + '</summary>' + esc(j.message) + '</details>' +
+          (again ? '<div class="buttons">' + again + '</div>' : '');
       } else if (j.status === 'cancelled') {
-        body = '<div class="sub" style="margin-top:6px">' + esc(t('stopped_msg')) + '</div>' + (again ? '<div class="actions">' + again + '</div>' : '');
+        body = '<p class="sub mt-1">' + esc(t('stopped_msg')) + '</p>' + (again ? '<div class="buttons">' + again + '</div>' : '');
       } else {
-        body = '<div class="stage">' + esc(stage(j)) + ' <b>' + pct + '%</b></div><div class="track' + (j.status === 'cancelling' ? ' stopping' : '') +
-          '"><i style="width:' + pct + '%"></i></div>' +
-          (running ? '<div class="actions"><button class="btn sm danger" onclick="stopJob(' + id + ')">■ ' + esc(t('stop')) + '</button>' +
-            (j.can_restart ? '<button class="btn sm" onclick="restartJob(' + id + ', true)">↻ ' + esc(t('restart')) + '</button>' : '') + '</div>' : '');
+        body = '<div class="stage">' + esc(stage(j)) + ' <b>' + pct + '%</b></div><progress class="progress is-small ' + (j.status === 'cancelling' ? 'stopping' : 'is-link') +
+          '" value="' + pct + '" max="100"></progress>' +
+          (running ? '<div class="buttons"><button class="button is-small is-danger is-outlined" onclick="stopJob(' + id + ')">■&nbsp;' + esc(t('stop')) + '</button>' +
+            (j.can_restart ? '<button class="button is-small" onclick="restartJob(' + id + ', true)">↻&nbsp;' + esc(t('restart')) + '</button>' : '') + '</div>' : '');
       }
-      return '<div class="job"><div class="top"><span style="font-size:22px">📄</span><span class="fname">' + esc(j.file) + '</span>' +
-        '<span class="sub">' + esc(bytes(j.size)) + '</span><span class="chip ' + j.status + '">' + esc(t('st_' + j.status)) + '</span>' +
-        (['done', 'failed', 'cancelled'].indexOf(j.status) >= 0 ? '<button class="x" title="' + esc(t('del')) + '" aria-label="' + esc(t('del')) + '" onclick="delJob(' + id + ')">🗑</button>' : '') +
+      var owner = IS_ADMIN && j.owner && ME && j.owner !== ME.name ? ' <span class="tag is-light is-info">' + esc(t('by', { u: j.owner })) + '</span>' : '';
+      return '<div class="job"><div class="top"><span style="font-size:22px">📄</span><span class="fname">' + esc(j.file) + '</span>' + owner +
+        '<span class="sub">' + esc(bytes(j.size)) + '</span><span class="tag ' + (CHIP[j.status] ? CHIP[j.status] + ' is-light' : 'is-plain') + '">' + esc(t('st_' + j.status)) + '</span>' +
+        (['done', 'failed', 'cancelled'].indexOf(j.status) >= 0 ? '<button class="delete" title="' + esc(t('del')) + '" aria-label="' + esc(t('del')) + '" onclick="delJob(' + id + ')"></button>' : '') +
         '</div>' + body + '</div>';
     }).join('');
   }).catch(function () { busy = false; });
 }
 
+// --- HDFS browser (WebHDFS through the app) -------------------------------------------------
+function hdfsOpen(path) { $('hdfs').classList.add('is-active'); hdfsGo(path || store('autoeda-hdfs-dir') || '/'); }
+function hdfsClose() { $('hdfs').classList.remove('is-active'); }
+function hdfsGo(path) {
+  $('hdfs-msg').textContent = ''; $('hdfs-rows').innerHTML = '<tr><td><progress class="progress is-small"></progress></td></tr>';
+  fetch('/api/hdfs?path=' + encodeURIComponent(path)).then(function (r) { return r.json().then(function (j) { if (!r.ok) throw j; return j; }); })
+    .then(function (j) {
+      store('autoeda-hdfs-dir', j.path);
+      var parts = j.path.split('/').filter(Boolean), acc = '';
+      $('hdfs-crumbs').firstElementChild.innerHTML = '<li><a href="#" data-p="/">/</a></li>' + parts.map(function (p) {
+        acc += '/' + p; return '<li><a href="#" data-p="' + esc(acc) + '">' + esc(p) + '</a></li>'; }).join('');
+      $('hdfs-crumbs').querySelectorAll('a').forEach(function (a) { a.onclick = function (e) { e.preventDefault(); hdfsGo(a.dataset.p); }; });
+      $('hdfs-rows').innerHTML = j.entries.map(function (e, i) {
+        return '<tr style="cursor:pointer" data-i="' + i + '"><td>' + (e.dir ? '📁 ' : '📄 ') + '<b>' + esc(e.name) + '</b></td><td class="has-text-right sub">' +
+          (e.dir ? '' : esc(bytes(e.size))) + '</td><td class="sub">' + esc(when(e.modified)) + '</td></tr>';
+      }).join('');
+      $('hdfs-rows').querySelectorAll('tr').forEach(function (tr) {
+        var e = j.entries[tr.dataset.i];
+        tr.onclick = function () {
+          if (e.dir) return hdfsGo(e.path);
+          $('path').value = e.uri; hdfsClose(); toast(t('hdfs_pick', { p: e.uri }), 'good');
+        };
+      });
+      if (!j.entries.length) $('hdfs-msg').textContent = t('hdfs_empty');
+    })
+    .catch(function (e) { $('hdfs-rows').innerHTML = ''; $('hdfs-msg').textContent = t('hdfs_err') + ((e && e.detail) || ''); });
+}
+
 function target(sel) { return document.querySelector(sel); }
 function showStep() {
-  var steps = T[LANG].tour, s = steps[step], el = target(s[0]);
+  var steps = tr('tour'), s = steps[step], el = target(s[0]);
+  if (el.offsetParent === null) el = $('t-upload');            // e.g. the language buttons inside a closed mobile menu
   $('tour-title').textContent = s[1]; $('tour-text').textContent = s[2];
   $('tour-dots').textContent = (step + 1) + ' / ' + steps.length;
   $('tour-prev').textContent = t('prev'); $('tour-prev').style.visibility = step ? 'visible' : 'hidden';
@@ -402,35 +328,29 @@ function showStep() {
 }
 function tourStart() { step = 0; $('tour-back').style.display = 'block'; showStep(); }
 function tourEnd() { $('tour-back').style.display = 'none'; store('autoeda-app-tour', '1'); }
-$('tour-next').onclick = function () { if (step < T[LANG].tour.length - 1) { step++; showStep(); } else tourEnd(); };
+$('tour-next').onclick = function () { if (step < tr('tour').length - 1) { step++; showStep(); } else tourEnd(); };
 $('tour-prev').onclick = function () { if (step > 0) { step--; showStep(); } };
 $('tour-back').addEventListener('click', function (e) { if (e.target.id === 'tour-back') tourEnd(); });
-document.addEventListener('keydown', function (e) {
-  if (dlgDone) { if (e.key === 'Escape') dlgDone(false); return; }
-  if (e.key === 'Escape') tourEnd();
-});
+document.addEventListener('keydown', function (e) { if (!dlgDone && e.key === 'Escape') tourEnd(); });
 addEventListener('resize', function () { if ($('tour-back').style.display === 'block') showStep(); });
 
-(function init() {
-  var saved = store('autoeda-lang');
-  setLang(saved || ((navigator.language || '').toLowerCase().indexOf('id') === 0 ? 'id' : 'en'));
-  fetch('/api/config').then(function (r) { return r.json(); }).then(function (c) {
-    $('engine').value = c.engine;
-    if (!c.spark_available) $('engine').querySelector('[value=spark]').disabled = true;
-    var models = c.models.length ? c.models : [c.default_model];
-    $('model').innerHTML = models.map(function (m) { return '<option' + (m === c.default_model ? ' selected' : '') + '>' + esc(m) + '</option>'; }).join('');
-    AI_OK = c.models.length > 0; $('useLlm').checked = AI_OK; $('useLlm').disabled = !AI_OK;
-    $('sysstate').innerHTML = '<span class="dot ok"></span>' + esc(t('sys_ok')) + ' · ' + esc(t('sys_engine')) + ': ' + esc(c.engine) +
-      ' · DuckDB ' + esc(c.memory_limit) + ' · AI: <span class="dot ' + (AI_OK ? 'ok' : 'no') + '"></span>' + esc(c.default_model);
-    $('ai-state').textContent = AI_OK ? '● ' + t('ai_on') : '○ ' + t('ai_off');
-  }).catch(function () {});
-  fetch('/api/input-files').then(function (r) { return r.json(); }).then(function (r) {
-    $('inputDir').textContent = r.dir + ' (' + r.files.length + ')';
-    $('inputFiles').innerHTML = r.files.map(function (f) { return '<option value="' + esc(f.path) + '">' + esc(bytes(f.size)) + '</option>'; }).join('');
-  }).catch(function () {});
-  setInterval(refresh, 2000);
-  if (!store('autoeda-app-tour')) setTimeout(tourStart, 700);
-})();
+boot();
+fetch('/api/config').then(function (r) { return r.json(); }).then(function (c) {
+  $('engine').value = c.engine;
+  $('hdfs-btn').hidden = !c.hdfs;
+  if (!c.spark_available) $('engine').querySelector('[value=spark]').disabled = true;
+  var models = c.models.length ? c.models : [c.default_model];
+  $('model').innerHTML = models.map(function (m) { return '<option' + (m === c.default_model ? ' selected' : '') + '>' + esc(m) + '</option>'; }).join('');
+  AI_OK = c.models.length > 0; $('useLlm').checked = AI_OK && c.ai_default_on !== false; $('useLlm').disabled = !AI_OK;
+  $('sysstate').innerHTML = '<span class="dot ok"></span>' + esc(t('sys_ok')) + ' · ' + esc(t('sys_engine')) + ': ' + esc(c.engine) +
+    ' · DuckDB ' + esc(c.memory_limit) + ' · AI: <span class="dot ' + (AI_OK ? 'ok' : 'no') + '"></span>' + esc(c.default_model);
+  $('ai-state').textContent = AI_OK ? '● ' + t('ai_on') : '○ ' + t('ai_off');
+}).catch(function () {});
+fetch('/api/input-files').then(function (r) { return r.json(); }).then(function (r) {
+  $('inputDir').textContent = r.dir + ' (' + r.files.length + ')';
+  $('inputFiles').innerHTML = r.files.map(function (f) { return '<option value="' + esc(f.path) + '">' + esc(bytes(f.size)) + '</option>'; }).join('');
+}).catch(function () {});
+setInterval(refresh, 2000);
+if (!store('autoeda-app-tour')) setTimeout(tourStart, 700);
 </script>
-</body>
-</html>
+{% endblock %}

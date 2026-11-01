@@ -1,0 +1,138 @@
+{% extends "layout.html" %}
+{% block title %}Data Check · Settings{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1 class="title is-4">⚙ <span data-t="title"></span></h1><p class="sub" data-t="sub"></p></div>
+</div>
+{% if user.role != 'admin' %}<div class="notification is-warning is-light">🔒 <span data-t="admin_only"></span></div>{% endif %}
+<div id="groups"></div>
+<div style="height:70px"></div>
+<div class="box is-flex is-align-items-center" style="position:fixed;left:0;right:0;bottom:0;margin:0;border-radius:0;gap:10px;z-index:20">
+  <div class="container is-max-desktop is-flex is-align-items-center" style="gap:10px">
+    <span class="sub" style="flex:1" id="msg"></span>
+    <button class="button" id="reset" data-t="reset"></button>
+    <button class="button is-link" id="save" data-t="save" disabled></button>
+  </div>
+</div>
+{% endblock %}
+{% block script %}
+<script>
+addT({
+  en: { title: 'Settings', sub: 'Applies to every new analysis on this server', save: 'Save', reset: 'Reset to defaults',
+    saved: 'Saved. New analyses use these settings.', failed: 'Not saved: ', confirm_t: 'Reset all settings?', confirm: 'Put every setting back to its default?',
+    changed: 'changed', restart: ' (needs a restart)', unsaved: 'Unsaved changes.',
+    sp_title: 'Cluster now', sp_check: 'Check again', sp_local: 'Local mode on this server: {c} CPU cores. Set the master to use an existing cluster.',
+    sp_ok: 'Connected to the cluster manager', sp_bad: 'Cannot reach the cluster manager', sp_noui: 'Resources unknown: set the web UI address below.',
+    sp_workers: 'Workers', sp_cores: 'Cores (used / total)', sp_mem: 'Memory (used / total)', sp_apps: 'Running apps',
+    sp_client: 'Spark client in this app: {v}. It must match the cluster’s Spark version.', sp_noclient: 'No Spark client in this image (build with WITH_SPARK=1).',
+    sp_session: 'A Spark session is open with these settings.' },
+  id: { title: 'Pengaturan', sub: 'Berlaku untuk setiap analisis baru di server ini', save: 'Simpan', reset: 'Kembalikan bawaan',
+    saved: 'Tersimpan. Analisis baru memakai pengaturan ini.', failed: 'Tidak tersimpan: ', confirm_t: 'Kembalikan semua pengaturan?', confirm: 'Kembalikan semua pengaturan ke bawaan?',
+    changed: 'diubah', restart: ' (perlu dijalankan ulang)', unsaved: 'Ada perubahan yang belum disimpan.',
+    sp_title: 'Klaster saat ini', sp_check: 'Periksa lagi', sp_local: 'Mode lokal di server ini: {c} core CPU. Isi master untuk memakai klaster yang sudah ada.',
+    sp_ok: 'Terhubung ke pengelola klaster', sp_bad: 'Pengelola klaster tidak dapat dijangkau', sp_noui: 'Sumber daya tidak diketahui: isi alamat web UI di bawah.',
+    sp_workers: 'Worker', sp_cores: 'Core (terpakai / total)', sp_mem: 'Memori (terpakai / total)', sp_apps: 'Aplikasi berjalan',
+    sp_client: 'Klien Spark di aplikasi ini: {v}. Harus sama dengan versi Spark klaster.', sp_noclient: 'Tidak ada klien Spark di image ini (build dengan WITH_SPARK=1).',
+    sp_session: 'Sesi Spark sedang terbuka dengan pengaturan ini.' }
+});
+var ITEMS = [], DIRTY = {};
+function msg(text, kind) { var m = $('msg'); m.textContent = text; m.className = kind === 'bad' ? 'has-text-danger' : kind === 'good' ? 'has-text-success' : 'sub'; m.style.flex = '1'; }
+function control(s) {
+  var v = s.key in DIRTY ? DIRTY[s.key] : s.value, c, id = 'f-' + s.key;
+  if (s.type === 'bool') {
+    var lab = el('label', { 'class': 'checkbox is-size-5' }); c = el('input', { type: 'checkbox', id: id, style: 'width:20px;height:20px' }); c.checked = !!v;
+    lab.appendChild(c); c.onchange = function () { mark(s, c.checked); }; c.disabled = !IS_ADMIN; return lab;
+  }
+  if (s.type === 'choice') {
+    var w = el('div', { 'class': 'select is-fullwidth' }); c = el('select', { id: id });
+    s.choices.forEach(function (o) { var op = el('option', { value: o }, o); if (o === v) op.selected = true; c.appendChild(op); });
+    c.onchange = function () { mark(s, c.value); }; c.disabled = !IS_ADMIN; w.appendChild(c); return w;
+  }
+  c = el('input', s.type === 'int' ? { 'class': 'input', type: 'number', id: id, min: s.min, max: s.max } : { 'class': 'input', type: 'text', id: id });
+  c.value = v; c.oninput = function () { mark(s, c.value); }; c.disabled = !IS_ADMIN; return c;
+}
+function mark(s, v) {
+  if (String(v) === String(s.value)) delete DIRTY[s.key]; else DIRTY[s.key] = s.type === 'int' ? Number(v) : v;
+  $('save').disabled = !Object.keys(DIRTY).length;
+  msg(Object.keys(DIRTY).length ? t('unsaved') : '');
+}
+function render() {
+  var main = $('groups'); main.innerHTML = '';
+  var groups = {};
+  ITEMS.forEach(function (s) { (groups[s.group] = groups[s.group] || { label: s.group_label, items: [] }).items.push(s); });
+  Object.keys(groups).forEach(function (g) {
+    main.appendChild(el('h2', { 'class': 'title is-5 mt-5' }, groups[g].label));
+    if (g === 'spark') main.appendChild(sparkBox());
+    var card = el('section', { 'class': 'box' });
+    groups[g].items.forEach(function (s, i) {
+      var row = el('div', { 'class': 'columns is-vcentered is-mobile mb-0' + (i ? ' pt-2' : ''), style: i ? 'border-top:1px solid var(--line)' : '' });
+      var lbl = el('div', { 'class': 'column' }), ctl = el('div', { 'class': 'column ' + (s.type === 'bool' ? 'is-narrow' : 'is-5') });
+      var b = el('label', { 'for': 'f-' + s.key, 'class': 'has-text-weight-semibold' }, s.label);
+      lbl.appendChild(b);
+      if (String(s.value) !== String(s.default)) lbl.appendChild(el('span', { 'class': 'tag is-link is-light ml-2' }, t('changed')));
+      if (s.help || s.restart) lbl.appendChild(el('p', { 'class': 'sub' }, (s.help || '') + (s.restart && !s.help ? t('restart') : '')));
+      ctl.appendChild(control(s)); row.appendChild(lbl); row.appendChild(ctl); card.appendChild(row);
+    });
+    main.appendChild(card);
+  });
+}
+var SPARK = null;
+function gb(mb) { return mb == null ? '–' : bytes(mb * 1048576); }
+function sparkBox() {
+  var box = el('section', { 'class': 'box', id: 'spark-box' }), s = SPARK;
+  var head = el('div', { 'class': 'is-flex is-justify-content-space-between is-align-items-center mb-2' });
+  head.appendChild(el('b', {}, t('sp_title')));
+  var again = el('button', { 'class': 'button is-small' }, '↻ ' + t('sp_check')); again.onclick = checkSpark; head.appendChild(again);
+  box.appendChild(head);
+  if (!s) { box.appendChild(el('progress', { 'class': 'progress is-small' })); return box; }
+  var line = function (cls, text) { box.appendChild(el('p', { 'class': cls }, text)); };
+  line('sub', s.master + (s.ui ? '  ·  ' + s.ui : ''));
+  if (s.kind === 'local') line('mt-2', t('sp_local', { c: s.cores }));
+  else if (s.reachable) {
+    line('has-text-success mt-2', '● ' + t('sp_ok') + (s.state ? ' (' + s.state + ')' : ''));
+    var lv = el('nav', { 'class': 'level is-mobile mt-3 mb-2', style: 'flex-wrap:wrap;gap:10px' });
+    [['sp_workers', s.workers], ['sp_cores', (s.cores_used == null ? '–' : s.cores_used) + ' / ' + (s.cores == null ? '–' : s.cores)],
+     ['sp_mem', gb(s.memory_used_mb) + ' / ' + gb(s.memory_mb)], ['sp_apps', s.apps_running]].forEach(function (x) {
+      var it = el('div', { 'class': 'level-item has-text-centered' }), d = el('div');
+      d.appendChild(el('p', { 'class': 'heading' }, t(x[0]))); d.appendChild(el('p', { 'class': 'title is-5' }, x[1] == null ? '–' : String(x[1])));
+      it.appendChild(d); lv.appendChild(it);
+    });
+    box.appendChild(lv);
+    if (s.worker_list && s.worker_list.length) {
+      var tb = el('table', { 'class': 'table is-narrow is-fullwidth is-size-7' }), body = el('tbody');
+      s.worker_list.forEach(function (w) {
+        var tr = el('tr'); tr.appendChild(el('td', {}, w.host));
+        tr.appendChild(el('td', { 'class': 'has-text-right' }, w.cores_used + ' / ' + w.cores + ' cores'));
+        tr.appendChild(el('td', { 'class': 'has-text-right' }, gb(w.memory_used_mb) + ' / ' + gb(w.memory_mb))); body.appendChild(tr);
+      });
+      tb.appendChild(body); box.appendChild(tb);
+    }
+  } else if (s.error && !s.ui) line('has-text-warning mt-2', '○ ' + t('sp_noui'));
+  else line('has-text-danger mt-2', '○ ' + t('sp_bad') + (s.error ? ': ' + s.error : ''));
+  line('sub mt-2', s.pyspark ? t('sp_client', { v: s.pyspark_version }) : t('sp_noclient'));
+  if (s.session) line('sub', t('sp_session'));
+  return box;
+}
+function checkSpark() {
+  SPARK = null; var old = $('spark-box'); if (old) old.replaceWith(sparkBox());
+  fetch('/api/spark').then(function (r) { return r.json(); }).then(function (j) { SPARK = j; var b = $('spark-box'); if (b) b.replaceWith(sparkBox()); });
+}
+function load() { fetch('/api/settings?lang=' + LANG).then(function (r) { return r.json(); }).then(function (j) { ITEMS = j.settings; render(); }); }
+$('save').onclick = function () {
+  var btn = this; btn.disabled = true;
+  fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(DIRTY) })
+    .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw j; return j; }); })
+    .then(function () { DIRTY = {}; msg(t('saved'), 'good'); load(); checkSpark(); })
+    .catch(function (e) { btn.disabled = false; msg(t('failed') + ((e && e.detail) || ''), 'bad'); });
+};
+$('reset').disabled = !IS_ADMIN;
+$('reset').onclick = function () {
+  ask(t('confirm_t'), t('confirm'), t('reset'), true).then(function (ok) {
+    if (ok) fetch('/api/settings', { method: 'DELETE' }).then(function () { DIRTY = {}; $('save').disabled = true; msg(t('saved'), 'good'); load(); });
+  });
+};
+function onLang() { document.title = t('app_title') + ' · ' + t('title'); load(); }
+boot();
+checkSpark();
+</script>
+{% endblock %}

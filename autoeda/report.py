@@ -11,9 +11,12 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup
 
-from . import i18n
+from . import bulma, i18n
 
 TEMPLATES = Path(__file__).parent / "templates"
+# classes the report's script adds after loading (the Bulma subset is taken from the HTML)
+SCRIPT_CLASSES = ("is-active", "is-clipped", "is-loading", "is-selected", "notification", "is-link", "is-light",
+                  "buttons", "button", "is-small")
 
 
 def svg_bars(bins, width=420, height=110, lang="en"):
@@ -100,9 +103,13 @@ def render(result: dict, out: Path) -> Path:
     html_text = env.get_template("report.html.j2").render(
         r=result, views=views, langs=i18n.LANGS, default_lang=result.get("lang", "en"),
         tour_json=Markup(json.dumps(tour, ensure_ascii=False).replace("</", "<\\/")),
-        ui_json=Markup(json.dumps({l: {k: i18n.UI[l][k] for k in ("next", "prev", "done", "close")}
+        ui_json=Markup(json.dumps({l: {k: i18n.UI[l][k] for k in ("next", "prev", "done", "close", "fb_sending", "fb_new", "fb_updated",
+                                                                     "fb_none", "fb_rerun", "fb_rerunning", "fb_error",
+                                                                     "fb_memory", "fb_send", "prev_col", "next_col", "col_pos")}
                                    for l in i18n.LANGS}, ensure_ascii=False)),
         now=dt.datetime.now().strftime("%Y-%m-%d %H:%M"))
+    # only the Bulma rules this report uses, so the file stays self-contained and small
+    html_text = html_text.replace("/*BULMA*/", bulma.subset(html_text, extra=SCRIPT_CLASSES), 1)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(html_text, encoding="utf-8")
     return out

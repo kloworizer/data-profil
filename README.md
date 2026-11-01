@@ -24,8 +24,46 @@ non-technical users:
 * **Messy data**: broken structure is repaired while reading, and every repair is logged
   in the report with examples (see the anomaly catalogue below).
 * **Web UI + REST API + CLI**, Docker-ready. Running analyses can be **stopped** and **restarted** from the
-  UI (or `POST /api/jobs/{id}/cancel` / `…/restart`); a stopped or failed job keeps its file so it can be
-  run again.
+  UI (or `POST /api/jobs/{id}/cancel` / `…/restart`); every job keeps its file until its report is deleted,
+  so any report in the list can be run again (e.g. after an update of the app). *Delete file, keep report*
+  frees the space of one upload (`POST /api/jobs/{id}/drop-file`); the setting *Keep uploaded files* off
+  deletes every upload as soon as its report is ready. Files in the server's input folder are never deleted.
+* **Settings page** (`/settings`): switch EDA features on or off (descriptive statistics, univariate,
+  multivariate, data-quality checks, duplicate rows), each AI step, memory, PDF reader, model and
+  performance limits. Saved in `data/settings.json`, so they survive restarts; they override the
+  environment variables of the same name and apply to the next analysis (`GET|PUT|DELETE /api/settings`).
+* **Sign-in** with users and roles. A *user* sees only their own reports and files; an *administrator*
+  sees everything and alone may change Settings, Memory and Users. See [Sign-in](#sign-in).
+* **Files page** (`/files`): every uploaded file with its size, report size, owner and date; disk space
+  used and free; sort, search, download the original, delete a file (keep the report) or both, also
+  several at once. Administrators also see and free left-over upload folders no report refers to.
+* **Report**: Bulma dark theme (light switch ◐), each table in its own framed block (*Table 2 of 4*, pages /
+  sheet, rows, columns), a column-statistics table where **clicking a row opens the column's card**
+  (counts, chart, common values and every *thing to check* with why it matters and what to do; ← → to
+  step through columns). **Export PDF** opens the print window (choose *Save as PDF*): light colours, every
+  column card and detail included, one table per page. The comment box (*Were the tables read
+  correctly?*) is at the bottom, with a table picker.
+
+## Sign-in
+
+On the first start, the app creates the administrator `AUTOEDA_ADMIN_USER` (default `admin`) with the
+password `AUTOEDA_ADMIN_PASSWORD`; when that is not set, a random password is printed to the log
+(`docker compose logs autoeda`). Sign in, then change it under 👤 → *Account & password*. Add users on the
+**Users** page (`/users`), or on the server:
+
+```bash
+python -m autoeda.auth list | add NAME [--admin] | passwd NAME | delete NAME
+# in Docker: docker compose exec autoeda python -m autoeda.auth passwd admin
+```
+
+* Users and salted PBKDF2 password hashes live in `data/users.json`; sessions are signed cookies
+  (`data/secret.key`, HttpOnly, SameSite=Lax, Secure over HTTPS) valid `AUTOEDA_SESSION_HOURS` (12).
+  Changing a password signs that user out everywhere else. Five wrong passwords in 5 minutes block that
+  name from that address for a while.
+* Scripts use HTTP Basic auth on the REST API: `curl -u ann:secret http://host:8000/api/jobs`.
+* Reports made before sign-in existed have no owner; administrators see them.
+* `AUTOEDA_AUTH=0` switches sign-in off (single-user laptop): everyone is the administrator. It is not
+  on the Settings page on purpose.
 
 ## Quick start (Windows / laptop, no Docker)
 
@@ -141,6 +179,31 @@ How text files are parsed:
 Spark mode keeps type inference, format/pattern checks and merged-column detection on a
 sample in DuckDB on the driver. All full-data statistics run as Spark SQL. The report is identical.
 
+### An existing Spark cluster and HDFS on the host
+
+`docker-compose.prod.yml` builds nothing and starts no Spark master or worker: the app connects to the
+cluster that already runs on the host as a Spark **client** (driver). Only the Spark client libraries
+(PySpark + Java) are in the image; build it with the cluster's version
+(`spark-submit --version` → `--build-arg WITH_SPARK=1 --build-arg PYSPARK_VERSION=<that version>`).
+
+* **Settings → Spark cluster and HDFS** sets the master (`spark://host:7077`, `yarn`, `local[*]`), the
+  `key=value;…` configuration, the work folder and the cluster's web UI address. A change applies to the
+  next Spark job, no restart. The page shows what the cluster has now, read from the standalone master's
+  `/json` or YARN's `/ws/v1/cluster/metrics`: alive workers, cores and memory used / total, running apps,
+  each worker, and the app's Spark client version (`GET /api/spark`). Size `spark.executor.*` and
+  `spark.cores.max` to those numbers, leaving room for the cluster's other users.
+* **HDFS files are analysed in place.** Mount the host's Hadoop client configuration
+  (`/etc/hadoop/conf`, `HADOOP_CONF_DIR`) so `hdfs://nameservice1/...` resolves, and set the WebHDFS address
+  (`AUTOEDA_HDFS_URL`, NameNode HTTP port 9870, or HttpFS 14000). Then *Advanced settings → Browse HDFS*
+  on the start page lists folders and files (`GET /api/hdfs?path=/`), or type an `hdfs://` path:
+  * Spark engine + CSV / TSV / Parquet / ORC / JSON: the executors read the file on the cluster; nothing
+    is copied.
+  * other formats (Excel, PDF, XML, …) or the local engine: the file is streamed into the app's work
+    folder over WebHDFS for the run and removed afterwards.
+* Kerberos: give Spark a principal and keytab in the configuration (`spark.kerberos.principal`,
+  `spark.kerberos.keytab`) and mount `/etc/krb5.conf` and the keytab; WebHDFS browsing then needs a
+  gateway that accepts the app's credentials (HttpFS / Knox).
+
 Production sketch (3 nodes × 72 cores / 786 GB): `docker-compose.prod.yml`. Point
 `AUTOEDA_SPARK_MASTER` at the cluster and `AUTOEDA_SPARK_WORK_DIR` at storage every executor can reach.
 Executors need the same Python minor version as the driver (standard library only); the `autoeda`
@@ -162,7 +225,12 @@ production), noticeably more reliable than the 2B PoC model.
 | `AUTOEDA_MAX_JOBS` | `1` | concurrent jobs |
 | `OLLAMA_HOST` / `OLLAMA_MODEL` | `http://localhost:11434` / `qwen3.5:2b` | LLM endpoint / model |
 | `AUTOEDA_LLM_BATCH`, `AUTOEDA_LLM_MAX_COLUMNS`, `AUTOEDA_LLM_TIMEOUT` | 5, 80, 180 | LLM batching / limits |
-| `AUTOEDA_SPARK_MASTER`, `AUTOEDA_SPARK_CONF`, `AUTOEDA_SPARK_WORK_DIR` | | Spark connection, `k=v;k=v` conf, shared work dir |
+| `AUTOEDA_SPARK_MASTER`, `AUTOEDA_SPARK_CONF`, `AUTOEDA_SPARK_WORK_DIR` | `local[*]` | Spark connection, `k=v;k=v` conf, shared work dir (also on the Settings page) |
+| `AUTOEDA_SPARK_UI` | from the master | cluster web UI / REST address the resources are read from (YARN: ResourceManager `:8088`) |
+| `AUTOEDA_HDFS_URL`, `AUTOEDA_HDFS_ROOT`, `AUTOEDA_HDFS_USER` | | WebHDFS address, `hdfs://` prefix (fs.defaultFS), `user.name` |
+| `AUTOEDA_AUTH` | `1` | sign-in on (`0`: off, everyone is administrator) |
+| `AUTOEDA_ADMIN_USER`, `AUTOEDA_ADMIN_PASSWORD` | `admin`, random | first administrator, created at the first start only |
+| `AUTOEDA_SESSION_HOURS` | `12` | how long a sign-in lasts |
 | `AUTOEDA_OCR_LANG` | `eng` | Tesseract language(s) for scanned PDFs, e.g. `ind+eng` |
 | `AUTOEDA_PDF_ENGINE` | `auto` | PDF tables: `auto` (see below), `plumber` (geometry only), `docling` (TableFormer on every page) |
 | `AUTOEDA_DOCLING_MODELS` | `./models/docling` | Docling model folder (nothing is downloaded at runtime) |
@@ -177,8 +245,12 @@ Rules and AI work together; every value always comes from the PDF's own text lay
 1. **Ruled tables** (cell borders): the cell geometry from pdfplumber is exact. Merged cells are resolved
    from it: a cell merged down (a group value) is copied to every row it covers, a group heading merged
    across columns prefixes its sub-columns (`Sales / 2023`), and a cell merged across a whole body row
-   (a section label) becomes a `section` column.
-2. **Borderless tables**: cells are guessed from text alignment. With Docling installed, the
+   (a section label) becomes a `section` column. A table ruled between columns but not between rows
+   (several records stacked in one cell) is split back into one row per record; a frame drawn round
+   another table, and lines that are only row shading, are not taken as cell borders.
+2. **Borderless tables**: lines that read as table rows (several short phrases, or a label and numbers)
+   are grouped, and columns are cut only at whitespace gutters shared by those lines, so a word is never
+   split and running text (articles, letters) is not mistaken for a table. With Docling installed, the
    **TableFormer** table-structure model (IBM Docling) reads the page too, and the better reading wins
    (consistent column types, no values glued together); the local model decides close calls.
 3. **Still unclear** (no header on top, word fragments, glued values) and the Ollama model can read images
@@ -188,7 +260,12 @@ Rules and AI work together; every value always comes from the PDF's own text lay
 4. **Tables over several pages** are stitched: columns are lined up by x-position, the header re-printed on
    each page is recognised by fuzzy matching (the local model decides borderline rows) and removed, and the
    rows repeated on every page tell how deep the header is, so a second header level (years, quarters) is
-   never read as data. A page that starts a different table is kept apart.
+   never read as data. A page that starts a different table (a new title above it, e.g. "LAMPIRAN II")
+   is kept apart; a "(Lanjutan) / (continued)" note keeps it joined. A wide table continued to the right on
+   the next page (same row labels, other columns, as in BPS *Dalam Angka* books) is joined side by side.
+5. **Clean-up**: page numbers and running headers, "(1) (2) (3)" column-numbering rows, signature boxes,
+   diagonal watermarks, glyphs printed twice for bold, and letter-spaced values (`0 3 / 2 5 / 2 0 16`).
+   A PDF with running text only stops with "No table found" instead of profiling words as columns.
 
 Docling is optional (it adds PyTorch and ~670 MB of models):
 
@@ -200,6 +277,35 @@ Docling is optional (it adds PyTorch and ~670 MB of models):
 
 Docker: `--build-arg WITH_DOCLING=1` (on by default in `docker-compose.yml` and the offline bundle;
 `WITH_DOCLING=0 scripts/offline_bundle.sh` leaves it out).
+
+## Memory: learning from comments
+
+Under every table of a report (when it is opened from the app) there is a comment box: *"Was this table
+read correctly?"*. Users write what is wrong in their own words, in English or Indonesian, for example:
+
+* "table 2 and 3 are one table" / "tabel 2 dan 3 adalah satu tabel"
+* "the header has 2 rows" / "judul kolom ada 2 baris"
+* "NIP is an ID, not a number" / "Kolom Desa adalah kategori"
+* "'Kecamatan Manggelewa' adalah total, bukan data" / "remove rows containing 'Ditandatangani'"
+* "rename column 'KEHADIRAN' to 'Attendance'"
+
+Each comment becomes a **skill**: an instruction for the local model plus structured hints the reader obeys
+(`header_rows`, `join_tables`, `drop_rows`, `column_types`, `rename_columns`), and keywords (publisher,
+document type, column names) that tell which later files it applies to. The local model writes the skill in
+general terms; explicit numbers and names are read by rules, and a hint the model proposes is kept only if
+the comment talks about it. Words that name the document's own subject (the district in "Kecamatan
+Manggelewa") become wildcards, so the lesson carries over to the next district's book. A comment on a kind
+of file that already has a skill refines that skill instead of adding a copy.
+
+Skills apply to new runs at once: the report lists the skills it used, and *Re-run with my feedback* reads
+the file again. The **Memory** page (`/memory`, linked from the main page) shows every skill and comment;
+any skill can be edited, switched off or deleted there, and *Clear memory* forgets everything.
+
+Memory is persistent: `memory/skills.json` and `memory/feedback.jsonl` in the project folder (or
+`AUTOEDA_MEMORY_DIR`; Docker mounts it at `/memory`). Commit the folder to sync what was learned between
+machines with git; per-server usage counts stay in `data/memory_usage.json` so they never cause merge
+conflicts. API: `POST /api/jobs/{id}/feedback`, `GET /api/memory`,
+`PUT|DELETE /api/memory/skills/{id}`.
 
 ## Anomaly catalogue
 
@@ -240,6 +346,18 @@ values (`999`, `-1`) · duplicate rows · strong correlations.
 ## Testing
 
 ```bash
+pip install -r requirements-dev.txt
+python -m pytest tests -q                            # real-world PDF / Excel / CSV corpus + unit tests
+AUTOEDA_TEST_DOCLING=1 python -m pytest tests -q     # the PDF corpus with the Docling table model
+```
+
+`tests/data/tabular` holds Excel and CSV exports of Indonesian open-data portals (titles, sub-rows,
+merged headers, `#REF!`, '.' as thousands separator). `tests/data/pdf` holds real documents (government statistics, budgets, election and procurement records,
+Indonesian BPS / Kemenkes / CPNS publications; sources in `SOURCES.md`). Each case in
+`tests/test_pdf_corpus.py` states the correct extraction; known shortcomings are strict `xfail` cases, so
+a fix shows up as XPASS.
+
+```bash
 python scripts/make_samples.py samples               # messy CSV + Excel
 python scripts/make_samples.py samples --big 10000000
 python scripts/make_anomaly_samples.py               # Excel / PDF / CSV anomaly corpus (PDF needs reportlab)
@@ -256,7 +374,10 @@ scripts/deploy_airgap.sh           build + send + install over SSH/SCP in one co
 scripts/offline_bundle.sh          build the air-gap bundle (internet side)
 scripts/install_offline.sh         install from the bundle (air-gapped side)
 autoeda/
-  web.py            FastAPI app (streamed upload, path jobs, job queue, reports)
+  web.py            FastAPI app (sign-in, streamed upload, path / HDFS jobs, job queue, files, reports)
+  auth.py           users, password hashes, signed sessions, `python -m autoeda.auth`
+  hdfs.py           WebHDFS: browse HDFS, copy files Spark cannot read into the app
+  bulma.py          vendored Bulma CSS (static/), cut down to the rules each report uses
   cli.py            command line
   pipeline.py       ingest -> profile -> LLM -> report
   ingest/           format sniffing + readers
@@ -274,6 +395,7 @@ autoeda/
   llm_anomaly.py    AI anomaly review (variants, placeholders, misfits, names, ambiguous rows)
   i18n.py           English / Indonesian texts, advice per problem, locale number format
   narrative.py report.py templates/   plain-language narrative, bilingual report and web UI
+  static/           bulma.min.css (v1.0.4, MIT), app.css, app.js: shared by the app pages
 ```
 
 ## Known PoC limits

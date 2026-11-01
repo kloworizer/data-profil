@@ -1,0 +1,71 @@
+/* AutoEDA app pages: Bulma (bulma.min.css) plus the few pieces Bulma has no component for. */
+:root {
+  --bulma-box-background-color: var(--bulma-scheme-main-bis);
+  --panel: var(--bulma-scheme-main-bis); --raised: var(--bulma-scheme-main-ter); --line: var(--bulma-border);
+  --muted: var(--bulma-text-weak); --strong: var(--bulma-text-strong); --accent: var(--bulma-link-on-scheme);
+  --accent-soft: var(--bulma-link-soft); --ai: #a78bfa; --ai-soft: rgba(139, 92, 246, .16);
+}
+[data-theme=light] { --ai: #6d28d9; --ai-soft: #f1eafe; }
+body { min-height: 100vh; background: var(--bulma-scheme-main); }
+.box { border: 1px solid var(--line); box-shadow: none; }
+.navbar { border-bottom: 1px solid var(--line); background: var(--panel); }
+.navbar .brand b { color: var(--strong); margin-left: 4px; }
+.navbar-item.is-active, .navbar-item.is-active:hover { background: var(--accent-soft) !important; color: var(--accent) !important; font-weight: 600; }
+.sub { color: var(--muted); font-size: 14px; }
+.page-head { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 18px; }
+.page-head > div:first-child { flex: 1; min-width: 220px; }
+.page-head .title { margin-bottom: 4px !important; }
+[hidden] { display: none !important; }
+.tag.is-ai { background: var(--ai-soft); color: var(--ai); }
+.tag.is-light.is-danger { background: var(--bulma-danger-soft); color: var(--bulma-danger-bold); }
+.tag.is-light.is-warning { background: var(--bulma-warning-soft); color: var(--bulma-warning-bold); }
+.tag.is-light.is-success { background: var(--bulma-success-soft); color: var(--bulma-success-bold); }
+.tag.is-light.is-info { background: var(--bulma-info-soft); color: var(--bulma-info-bold); }
+.tag.is-light.is-link { background: var(--bulma-link-soft); color: var(--bulma-link-bold); }
+.tag.is-plain { background: var(--raised); color: var(--muted); }
+.button.is-light.is-link { background: var(--bulma-link-soft); color: var(--bulma-link-bold); }
+.button.is-light.is-danger { background: var(--bulma-danger-soft); color: var(--bulma-danger-bold); }
+/* notices */
+#toasts { position: fixed; z-index: 96; left: 50%; bottom: 20px; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; width: min(460px, calc(100vw - 32px)); pointer-events: none; }
+#toasts .notification { pointer-events: auto; margin: 0; box-shadow: 0 8px 28px rgba(0,0,0,.35); animation: toastin .2s ease-out; }
+@keyframes toastin { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+/* guided tour */
+#tour-back { position: fixed; inset: 0; z-index: 90; display: none; }
+#tour-spot { position: fixed; z-index: 91; border-radius: 14px; box-shadow: 0 0 0 9999px rgba(5, 8, 14, .7); transition: all .25s; pointer-events: none; }
+#tour-card { position: fixed; z-index: 92; width: min(380px, calc(100vw - 32px)); background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px; box-shadow: 0 12px 40px rgba(0,0,0,.4); transition: top .25s, left .25s; }
+#tour-card h3 { margin: 0 0 6px; font-weight: 700; font-size: 17px; color: var(--strong); }
+#tour-card .row { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; }
+/* start page */
+.steps3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 18px; }
+.steps3 .st { display: flex; gap: 10px; align-items: center; color: var(--muted); }
+.steps3 .st i { font-style: normal; width: 30px; height: 30px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; font-weight: 700; flex: none; }
+.steps3 .st.on { color: var(--strong); font-weight: 600; } .steps3 .st.on i { background: var(--bulma-link); color: #fff; }
+#drop { border: 2px dashed var(--line); border-radius: 14px; padding: 40px 16px; text-align: center; cursor: pointer; transition: .15s; }
+#drop:hover, #drop.over { border-color: var(--accent); background: var(--accent-soft); }
+#drop .icon-big { font-size: 44px; line-height: 1; }
+#drop b { color: var(--accent); font-size: 19px; }
+.ai-opt { display: flex; gap: 12px; align-items: flex-start; margin-top: 16px; padding: 12px 14px; border-radius: 12px; background: var(--ai-soft); cursor: pointer; }
+.ai-opt input { width: 20px; height: 20px; margin-top: 3px; accent-color: var(--ai); flex: none; }
+.job { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; background: var(--bulma-scheme-main); }
+.job .top { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.job .fname { flex: 1; font-weight: 600; word-break: break-all; min-width: 160px; color: var(--strong); }
+.job .stage { margin: 8px 0 6px; }
+.job .buttons { margin-top: 10px; margin-bottom: 0; }
+.progress.stopping::-webkit-progress-value { background-color: var(--muted); }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
+.dot.ok { background: var(--bulma-success); } .dot.no { background: var(--bulma-danger); }
+/* file manager */
+.usage .heading { margin-bottom: 2px; }
+.usage .title { margin-bottom: 0 !important; }
+.ftable th { white-space: nowrap; cursor: pointer; user-select: none; }
+.ftable th.nosort { cursor: default; }
+.ftable th[data-dir=asc]::after { content: " ▲"; } .ftable th[data-dir=desc]::after { content: " ▼"; }
+.ftable td { vertical-align: middle; }
+.ftable td.num, .ftable th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ftable td.nowrap { white-space: nowrap; }
+.ftable .fname { word-break: break-all; font-weight: 600; color: var(--strong); }
+.bulkbar { position: sticky; bottom: 12px; z-index: 5; }
+/* login */
+.login-wrap { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
+.login-wrap .box { width: min(400px, 100%); }
+@media (max-width: 640px) { .steps3 { grid-template-columns: 1fr; } }

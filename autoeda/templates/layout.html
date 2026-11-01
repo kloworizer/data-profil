@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Data Check{% endblock %}</title>
+<script>try { var th = localStorage.getItem('autoeda-theme'); if (th === 'light' || th === 'dark') document.documentElement.setAttribute('data-theme', th); } catch (e) {}</script>
+<link rel="stylesheet" href="/static/bulma.min.css?v={{ version }}">
+<link rel="stylesheet" href="/static/app.css?v={{ version }}">
+{% block head %}{% endblock %}
+</head>
+<body>
+{% if user %}
+<nav class="navbar" aria-label="main navigation">
+  <div class="container">
+    <div class="navbar-brand">
+      <a class="navbar-item brand" href="/">📊 <b data-t="app_title">Data Check</b></a>
+      <a role="button" class="navbar-burger" aria-label="menu" aria-expanded="false" onclick="burger(this)"><span aria-hidden="true"></span><span aria-hidden="true"></span><span aria-hidden="true"></span><span aria-hidden="true"></span></a>
+    </div>
+    <div class="navbar-menu" id="nav">
+      <div class="navbar-start">
+        <a class="navbar-item{% if page == 'index' %} is-active{% endif %}" href="/">▶&nbsp;<span data-t="nav_analyze"></span></a>
+        <a class="navbar-item{% if page == 'files' %} is-active{% endif %}" href="/files">🗂&nbsp;<span data-t="nav_files"></span></a>
+        <a class="navbar-item{% if page == 'memory' %} is-active{% endif %}" href="/memory">🧠&nbsp;<span data-t="nav_memory"></span></a>
+        {% if user.role == 'admin' %}
+        <a class="navbar-item{% if page == 'settings' %} is-active{% endif %}" href="/settings">⚙&nbsp;<span data-t="nav_settings"></span></a>
+        {% if auth %}<a class="navbar-item{% if page == 'users' %} is-active{% endif %}" href="/users">👥&nbsp;<span data-t="nav_users"></span></a>{% endif %}
+        {% endif %}
+      </div>
+      <div class="navbar-end">
+        <div class="navbar-item"><div class="buttons has-addons" id="langbox"><button class="button is-small" data-setlang="en">English</button><button class="button is-small" data-setlang="id">Indonesia</button></div></div>
+        <div class="navbar-item"><button class="button is-small" onclick="toggleTheme()" data-tt="theme" aria-label="theme">◐</button></div>
+        {% block navextra %}{% endblock %}
+        {% if auth %}
+        <div class="navbar-item has-dropdown is-hoverable">
+          <a class="navbar-link">👤 {{ user.name }}</a>
+          <div class="navbar-dropdown is-right">
+            <div class="navbar-item"><span class="tag is-light {{ 'is-link' if user.role == 'admin' else 'is-info' }}" data-t="role_{{ user.role }}"></span></div>
+            <a class="navbar-item" href="/users#password">🔑&nbsp;<span data-t="account"></span></a>
+            <hr class="navbar-divider">
+            <a class="navbar-item" href="#" onclick="logout(); return false">⎋&nbsp;<span data-t="logout"></span></a>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</nav>
+{% endif %}
+{% block body %}
+<section class="section pt-5">
+  <div class="container {% block width %}is-max-desktop{% endblock %}">{% block content %}{% endblock %}</div>
+</section>
+{% endblock %}
+
+<div class="modal" id="dlg" role="dialog" aria-modal="true" aria-labelledby="dlg-title" aria-describedby="dlg-text">
+  <div class="modal-background"></div>
+  <div class="modal-card" style="width:min(440px, calc(100vw - 32px))">
+    <header class="modal-card-head"><p class="modal-card-title" id="dlg-title"></p></header>
+    <section class="modal-card-body"><p id="dlg-text"></p></section>
+    <footer class="modal-card-foot" style="justify-content:flex-end"><div class="buttons"><button class="button" id="dlg-no"></button><button class="button is-link" id="dlg-yes"></button></div></footer>
+  </div>
+</div>
+<div id="toasts" aria-live="polite"></div>
+<script>var ME = {{ user | tojson }};</script>
+<script src="/static/app.js?v={{ version }}"></script>
+{% block script %}{% endblock %}
+</body>
+</html>

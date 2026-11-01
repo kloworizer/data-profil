@@ -11,6 +11,20 @@
 #     Easiest on an air-gapped standalone cluster: run this same image as the Spark workers
 #     (see the commented `spark-worker` service), so versions match exactly.
 #   * run the same Spark version as PYSPARK_VERSION used to build the image (default 3.5.3).
+#
+# An existing Spark cluster on the host is used as it is: this file builds nothing and starts no
+# Spark master or worker (the spark-worker service below stays commented out). The image only
+# carries the Spark *client* (PySpark + Java) the driver needs. Check the cluster's version with
+# `spark-submit --version` and build the image to match:
+#   docker build --build-arg WITH_SPARK=1 --build-arg PYSPARK_VERSION=<cluster version> -t autoeda:poc .
+# Master, conf, work folder and HDFS can also be changed later on the Settings page (Spark cluster
+# and HDFS), which also shows the cluster's workers, cores, memory and running apps.
+#
+# HDFS files on the host are analysed in place, without copying them into /input:
+#   * Spark engine + CSV / TSV / Parquet / ORC / JSON: read by the executors directly (hdfs://...).
+#   * anything else (Excel, PDF, XML...) or the local engine: streamed into the app over WebHDFS
+#     (AUTOEDA_HDFS_URL) for the run, then removed.
+#   Users pick files with "Browse HDFS" on the start page or type an hdfs:// path.
 name: autoeda   # fixed project name: same container / volume names wherever it is deployed
 
 services:
@@ -19,9 +33,21 @@ services:
     command: ["web"]
     network_mode: host
     environment:
+      # Sign-in: the first start creates this administrator (then change the password on the Users
+      # page; the variable is ignored once users exist). Unset: a random password is printed to the log.
+      AUTOEDA_ADMIN_USER: admin
+      AUTOEDA_ADMIN_PASSWORD: ${AUTOEDA_ADMIN_PASSWORD:-}
       AUTOEDA_ENGINE: spark
-      AUTOEDA_SPARK_MASTER: spark://spark-master.internal:7077
+      # --- the Spark cluster already running on the host ---------------------------------------
+      AUTOEDA_SPARK_MASTER: spark://spark-master.internal:7077   # YARN: "yarn" (needs HADOOP_CONF_DIR below)
+      AUTOEDA_SPARK_UI: http://spark-master.internal:8080        # resources shown in Settings; YARN: http://<resourcemanager>:8088
       AUTOEDA_SPARK_WORK_DIR: file:///shared/autoeda_work      # or hdfs:///tmp/autoeda
+      # --- HDFS on the host ------------------------------------------------------------------------
+      HADOOP_CONF_DIR: /etc/hadoop/conf          # core-site.xml / hdfs-site.xml: resolves hdfs://nameservice1
+      YARN_CONF_DIR: /etc/hadoop/conf
+      AUTOEDA_HDFS_URL: http://namenode.internal:9870          # WebHDFS (NameNode HTTP); HA: the active one or HttpFS :14000
+      AUTOEDA_HDFS_ROOT: hdfs://nameservice1                   # fs.defaultFS
+      AUTOEDA_HDFS_USER: autoeda                               # simple auth; Kerberos: see the keytab lines below
       # ~3 x 72 cores: 14 executors/node x 5 cores, 48 GB each (+ overhead) leaves room for OS/daemons
       AUTOEDA_SPARK_CONF: >-
         spark.driver.port=7078;spark.blockManager.port=7079;
@@ -29,6 +55,9 @@ services:
         spark.cores.max=210;spark.driver.maxResultSize=8g;
         spark.sql.shuffle.partitions=840;spark.default.parallelism=840;
         spark.pyspark.python=python3.12
+      # Kerberos-secured cluster: add to AUTOEDA_SPARK_CONF
+      #   spark.kerberos.principal=autoeda@REALM;spark.kerberos.keytab=/etc/security/keytabs/autoeda.keytab
+      # and mount /etc/krb5.conf and the keytab (volumes below). WebHDFS browsing then needs HttpFS / Knox.
       # local DuckDB engine (Excel / PDF / XML / SQLite, or when chosen in the UI) on one big node
       AUTOEDA_MEMORY_LIMIT: 256GB
       AUTOEDA_THREADS: "64"
@@ -39,10 +68,15 @@ services:
       # Mixture-of-experts: 35B parameters, ~3B active per token -> small-model speed on CPU, much
       # better answers, reads images (PDF table layout). qwen3.5:2b (also bundled) stays selectable in the UI.
       OLLAMA_MODEL: qwen3.5:35b-a3b
+      AUTOEDA_MEMORY_DIR: /memory
     volumes:
       - /srv/autoeda/data:/data
+      - /srv/autoeda/memory:/memory        # learned skills; may be a git clone to sync
       - /srv/datasets:/input:ro
       - /shared/autoeda_work:/shared/autoeda_work
+      - /etc/hadoop/conf:/etc/hadoop/conf:ro     # the host's Hadoop client configuration
+      # - /etc/krb5.conf:/etc/krb5.conf:ro
+      # - /etc/security/keytabs/autoeda.keytab:/etc/security/keytabs/autoeda.keytab:ro
     restart: unless-stopped
 
   ollama:

@@ -101,6 +101,7 @@ class Table:
     n_rows: int = 0
     source: dict = field(default_factory=dict)
     repairs: RepairLog = field(default_factory=RepairLog)
+    type_hints: dict = field(default_factory=dict)    # column -> text | identifier | category (memory)
 
 
 def clean_header(names: list, width: int | None = None) -> list[str]:

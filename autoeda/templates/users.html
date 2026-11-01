@@ -1,0 +1,123 @@
+{% extends "layout.html" %}
+{% block title %}Data Check · Users{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1 class="title is-4">👥 <span data-t="{{ 'title' if user.role == 'admin' else 'account' }}"></span></h1><p class="sub" data-t="sub"></p></div>
+</div>
+
+{% if not auth %}
+<div class="notification is-warning is-light" data-t="auth_off"></div>
+{% else %}
+<section class="box" id="password">
+  <h2 class="title is-5">🔑 <span data-t="pw_title"></span> <span class="tag is-light is-link">{{ user.name }}</span></h2>
+  <form id="pwform" class="columns is-multiline mb-0" autocomplete="off">
+    <div class="column is-4"><label class="label is-small" data-t="pw_old"></label><input class="input" type="password" id="pw-old" autocomplete="current-password" required></div>
+    <div class="column is-4"><label class="label is-small" data-t="pw_new"></label><input class="input" type="password" id="pw-new" autocomplete="new-password" required></div>
+    <div class="column is-4"><label class="label is-small" data-t="pw_again"></label><input class="input" type="password" id="pw-again" autocomplete="new-password" required></div>
+    <div class="column is-12 pt-0"><button class="button is-link" type="submit" data-t="pw_change"></button> <span class="sub ml-2" data-t="pw_hint"></span></div>
+  </form>
+</section>
+
+{% if user.role == 'admin' %}
+<section class="box">
+  <h2 class="title is-5">➕ <span data-t="add_title"></span></h2>
+  <form id="addform" class="columns is-multiline mb-0" autocomplete="off">
+    <div class="column is-4"><label class="label is-small" data-t="name"></label><input class="input" id="a-name" required pattern="[A-Za-z0-9._@\-]{1,64}"></div>
+    <div class="column is-4"><label class="label is-small" data-t="password"></label><input class="input" type="password" id="a-pw" autocomplete="new-password" required></div>
+    <div class="column is-2"><label class="label is-small" data-t="role"></label><div class="select is-fullwidth"><select id="a-role"><option value="user" data-t="role_user"></option><option value="admin" data-t="role_admin"></option></select></div></div>
+    <div class="column is-2" style="align-self:flex-end"><button class="button is-link is-fullwidth" type="submit" data-t="add"></button></div>
+  </form>
+</section>
+
+<section class="box">
+  <h2 class="title is-5" data-t="list_title"></h2>
+  <div class="table-container"><table class="table is-fullwidth is-hoverable">
+    <thead><tr><th data-t="name"></th><th data-t="role"></th><th data-t="created"></th><th data-t="last_login"></th><th></th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table></div>
+  <p class="sub" data-t="list_hint"></p>
+</section>
+{% endif %}
+{% endif %}
+{% endblock %}
+{% block script %}
+<script>
+addT({
+  en: { title: 'Users', sub: 'Who can sign in to this app', auth_off: 'Sign-in is switched off on this server (AUTOEDA_AUTH=0): everyone is the administrator.',
+    pw_title: 'Change my password', pw_old: 'Current password', pw_new: 'New password', pw_again: 'New password again', pw_change: 'Change password',
+    pw_hint: 'At least {n} characters. Your other sessions are signed out.', pw_differ: 'The new passwords differ.', pw_done: 'Password changed.',
+    add_title: 'Add a user', name: 'User name', password: 'Password', role: 'Role', add: 'Add', added: 'User {u} added.',
+    list_title: 'Users', created: 'Created', last_login: 'Last sign-in', never: 'never', you: 'you',
+    make_admin: 'Make administrator', make_user: 'Make user', reset_pw: 'Set password', delete: 'Delete',
+    q_del_t: 'Delete user {u}?', q_del: 'They can no longer sign in. Their reports stay (administrators still see them).',
+    new_pw: 'New password for {u} (at least {n} characters):', pw_set: 'Password set. {u} is signed out everywhere.',
+    list_hint: 'Users see only their own reports and files; administrators see everything and can change settings, memory and users.' },
+  id: { title: 'Pengguna', sub: 'Siapa yang dapat masuk ke aplikasi ini', auth_off: 'Login dimatikan di server ini (AUTOEDA_AUTH=0): semua orang adalah administrator.',
+    pw_title: 'Ganti kata sandi saya', pw_old: 'Kata sandi saat ini', pw_new: 'Kata sandi baru', pw_again: 'Ulangi kata sandi baru', pw_change: 'Ganti kata sandi',
+    pw_hint: 'Minimal {n} karakter. Sesi Anda yang lain akan keluar.', pw_differ: 'Kata sandi baru tidak sama.', pw_done: 'Kata sandi diganti.',
+    add_title: 'Tambah pengguna', name: 'Nama pengguna', password: 'Kata sandi', role: 'Peran', add: 'Tambah', added: 'Pengguna {u} ditambahkan.',
+    list_title: 'Pengguna', created: 'Dibuat', last_login: 'Terakhir masuk', never: 'belum pernah', you: 'Anda',
+    make_admin: 'Jadikan administrator', make_user: 'Jadikan pengguna', reset_pw: 'Atur kata sandi', delete: 'Hapus',
+    q_del_t: 'Hapus pengguna {u}?', q_del: 'Pengguna ini tidak bisa masuk lagi. Laporannya tetap ada (administrator masih bisa melihatnya).',
+    new_pw: 'Kata sandi baru untuk {u} (minimal {n} karakter):', pw_set: 'Kata sandi diatur. {u} keluar dari semua sesi.',
+    list_hint: 'Pengguna hanya melihat laporan dan file miliknya; administrator melihat semuanya dan dapat mengubah pengaturan, memori, dan pengguna.' }
+});
+var MIN = 8, USERS = [];
+function detail(r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.detail || t('err_action')); return j; }); }
+function onLang() {
+  document.title = t('app_title') + ' · ' + t(IS_ADMIN ? 'title' : 'account');
+  document.querySelectorAll('[data-t=pw_hint]').forEach(function (e) { e.textContent = t('pw_hint', { n: MIN }); });
+  render();
+}
+if ($('pwform')) $('pwform').onsubmit = function (e) {
+  e.preventDefault();
+  if ($('pw-new').value !== $('pw-again').value) return toast(t('pw_differ'), 'bad');
+  fetch('/api/me/password', { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ old: $('pw-old').value, 'new': $('pw-new').value }) })
+    .then(detail).then(function () { toast(t('pw_done'), 'good'); $('pwform').reset(); })
+    .catch(function (e) { toast(e.message, 'bad'); });
+};
+function load() {
+  if (!IS_ADMIN || !$('rows')) return;
+  fetch('/api/users').then(detail).then(function (j) { USERS = j.users; MIN = j.min_password; onLang(); });
+}
+function render() {
+  if (!$('rows')) return;
+  $('rows').innerHTML = USERS.map(function (u) {
+    var me = ME && u.name === ME.name, n = "'" + esc(u.name).replace(/'/g, "\\'") + "'";
+    return '<tr><td><b>' + esc(u.name) + '</b>' + (me ? ' <span class="tag is-light is-link">' + esc(t('you')) + '</span>' : '') + '</td>' +
+      '<td><span class="tag is-light ' + (u.role === 'admin' ? 'is-link' : 'is-info') + '">' + esc(t('role_' + u.role)) + '</span></td>' +
+      '<td class="sub">' + esc(when(u.created)) + '</td><td class="sub">' + esc(u.last_login ? when(u.last_login) : t('never')) + '</td>' +
+      '<td><div class="buttons are-small is-right mb-0">' +
+        '<button class="button" onclick="setPw(' + n + ')">' + esc(t('reset_pw')) + '</button>' +
+        (me ? '' : '<button class="button" onclick="setRole(' + n + ', \'' + (u.role === 'admin' ? 'user' : 'admin') + '\')">' + esc(t(u.role === 'admin' ? 'make_user' : 'make_admin')) + '</button>' +
+          '<button class="button is-danger is-light" onclick="delUser(' + n + ')">' + esc(t('delete')) + '</button>') +
+      '</div></td></tr>';
+  }).join('');
+}
+function edit(name, body, okMsg) {
+  return fetch('/api/users/' + encodeURIComponent(name), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    .then(detail).then(function () { if (okMsg) toast(okMsg, 'good'); load(); }).catch(function (e) { toast(e.message, 'bad'); });
+}
+function setRole(name, role) { edit(name, { role: role }); }
+function setPw(name) {
+  var pw = prompt(t('new_pw', { u: name, n: MIN }));
+  if (pw) edit(name, { password: pw }, t('pw_set', { u: name }));
+}
+function delUser(name) {
+  ask(t('q_del_t', { u: name }), t('q_del'), t('delete'), true).then(function (ok) {
+    if (ok) fetch('/api/users/' + encodeURIComponent(name), { method: 'DELETE' }).then(detail).then(load).catch(function (e) { toast(e.message, 'bad'); });
+  });
+}
+if ($('addform')) $('addform').onsubmit = function (e) {
+  e.preventDefault();
+  var name = $('a-name').value.trim();
+  fetch('/api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: name, password: $('a-pw').value, role: $('a-role').value }) })
+    .then(detail).then(function () { toast(t('added', { u: name }), 'good'); $('addform').reset(); load(); })
+    .catch(function (e) { toast(e.message, 'bad'); });
+};
+boot();
+load();
+</script>
+{% endblock %}

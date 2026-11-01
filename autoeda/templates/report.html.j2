@@ -1,105 +1,123 @@
 <!doctype html>
-<html lang="{{ default_lang }}" data-lang="{{ default_lang }}">
+<html lang="{{ default_lang }}" data-lang="{{ default_lang }}" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Data Check Report</title>
+<script>try { var th = localStorage.getItem('autoeda-theme'); if (th === 'light' || th === 'dark') document.documentElement.setAttribute('data-theme', th); } catch (e) {}</script>
+<style>/*BULMA*/</style>
 <style>
 :root {
-  --bg: #f5f6f8; --panel: #ffffff; --ink: #1c2330; --muted: #5b6475; --line: #e2e5eb;
-  --accent: #2563d9; --accent-soft: #e8effc; --bar: #4f86e8;
-  --good: #15803d; --good-soft: #e5f5ea; --fair: #b45309; --fair-soft: #fdf1e1; --bad: #c2410c; --bad-soft: #fde8df;
-  --info: #2563a8; --info-soft: #e7f0fa; --ai: #7c3aed; --ai-soft: #f1eafe; --code: #f0f2f5;
+  --bulma-box-background-color: var(--bulma-scheme-main-bis);
+  --panel: var(--bulma-scheme-main-bis); --bg: var(--bulma-scheme-main); --raised: var(--bulma-scheme-main-ter);
+  --ink: var(--bulma-text); --strong: var(--bulma-text-strong); --muted: var(--bulma-text-weak); --line: var(--bulma-border);
+  --accent: var(--bulma-link-on-scheme); --accent-soft: var(--bulma-link-soft); --bar: var(--bulma-link);
+  --good: var(--bulma-success-on-scheme); --good-soft: var(--bulma-success-soft);
+  --fair: var(--bulma-warning-on-scheme); --fair-soft: var(--bulma-warning-soft);
+  --bad: var(--bulma-danger-on-scheme); --bad-soft: var(--bulma-danger-soft);
+  --info: var(--bulma-info-on-scheme); --info-soft: var(--bulma-info-soft);
+  --ai: #a78bfa; --ai-soft: rgba(139, 92, 246, .16); --code: var(--bulma-code-background);
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #12151b; --panel: #1a1f27; --ink: #e7eaf0; --muted: #9aa3b3; --line: #2c333e;
-    --accent: #7aa7ff; --accent-soft: #1d2a44; --bar: #6f9cf0;
-    --good: #5fcf88; --good-soft: #15301f; --fair: #f0a24a; --fair-soft: #3a2a14; --bad: #fb8f63; --bad-soft: #3d1f14;
-    --info: #7fb4f0; --info-soft: #18293d; --ai: #b794f6; --ai-soft: #2a2140; --code: #232a35;
-  }
-}
-* { box-sizing: border-box; }
+[data-theme=light] { --ai: #6d28d9; --ai-soft: #f1eafe; }
 html { scroll-behavior: smooth; }
-body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+body { background: var(--bg); color: var(--ink); font-size: 15px; }
 [data-lang="en"] .lang-id, [data-lang="id"] .lang-en { display: none !important; }
-header.top { background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 20; }
-.topbar { max-width: 1180px; margin: 0 auto; padding: 12px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.topbar h1 { font-size: 19px; margin: 0; flex: 1; min-width: 200px; }
-.topbar .file { color: var(--muted); font-size: 13px; font-weight: 400; display: block; }
-.btn { border: 1px solid var(--line); background: var(--panel); color: var(--ink); padding: 7px 14px; border-radius: 999px; cursor: pointer; font: inherit; font-size: 14px; }
-.btn:hover { border-color: var(--accent); color: var(--accent); }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
-.seg button { border: 0; background: transparent; color: var(--ink); padding: 7px 12px; cursor: pointer; font: inherit; font-size: 14px; }
-.seg button.on { background: var(--accent); color: #fff; }
-main { max-width: 1180px; margin: 0 auto; padding: 20px 16px 80px; }
-.card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px 22px; margin-bottom: 18px; }
-h2 { font-size: 20px; margin: 0 0 14px; }
-h3 { font-size: 16px; margin: 0 0 6px; }
 .sub { color: var(--muted); font-size: 13px; }
+.box { border: 1px solid var(--line); box-shadow: none; }
+.tag.is-ai { background: var(--ai-soft); color: var(--ai); }
+.tag.is-light.is-danger { background: var(--bulma-danger-soft); color: var(--bulma-danger-bold); }
+.tag.is-light.is-warning { background: var(--bulma-warning-soft); color: var(--bulma-warning-bold); }
+.tag.is-light.is-success { background: var(--bulma-success-soft); color: var(--bulma-success-bold); }
+.tag.is-light.is-info { background: var(--bulma-info-soft); color: var(--bulma-info-bold); }
+.tag.is-light.is-link { background: var(--bulma-link-soft); color: var(--bulma-link-bold); }
+/* top bar */
+.topbar { background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 30; }
+.topbar .wrap { max-width: 1240px; margin: 0 auto; padding: 10px 16px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.topbar h1 { font-size: 19px; font-weight: 700; margin: 0; flex: 1; min-width: 200px; color: var(--strong); }
+.topbar .file { color: var(--muted); font-size: 13px; font-weight: 400; display: block; word-break: break-all; }
+main { max-width: 1240px; margin: 0 auto; padding: 20px 16px 80px; }
+h2.title { margin-bottom: 14px !important; }
+/* one block per table: framed, with a header band, so tables never run into each other */
+.tblock { border: 2px solid var(--line); border-top: 6px solid var(--tc, var(--accent)); border-radius: 14px; margin: 0 0 44px; background: var(--bg); scroll-margin-top: 70px; }
+.tblock.good { --tc: var(--good); } .tblock.fair { --tc: var(--fair); } .tblock.bad { --tc: var(--bad); }
+.tblock-head { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 14px 18px; background: var(--raised); border-bottom: 2px solid var(--line); border-radius: 8px 8px 0 0; }
+.tblock-head .tname { font-size: 20px; font-weight: 700; color: var(--strong); flex: 1; min-width: 200px; word-break: break-word; }
+.tblock-head .tmeta { font-size: 13px; color: var(--muted); }
+.tblock-body { padding: 18px; }
+.tblock-body > .box:last-child { margin-bottom: 0; }
+.tblock-foot { display: flex; gap: 14px; flex-wrap: wrap; justify-content: space-between; align-items: center; padding: 10px 18px; border-top: 2px dashed var(--line); color: var(--muted); font-size: 13px; }
+.part-title { display: flex; align-items: center; gap: 10px; margin: 26px 0 12px; color: var(--muted); font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+.part-title::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
+.overview td, .overview th { vertical-align: middle; }
+/* verdict */
 .lead { border-width: 2px; border-color: var(--c, var(--line)); }
 .lead.good { --c: var(--good); } .lead.fair { --c: var(--fair); } .lead.bad { --c: var(--bad); }
 .verdict { display: flex; gap: 20px; align-items: center; }
-.headline { font-size: 25px; margin: 0 0 6px; line-height: 1.25; }
+.headline { font-size: 24px; font-weight: 700; margin: 0 0 6px; line-height: 1.25; color: var(--strong); }
 .most { margin: 0; font-size: 16px; }
-.gauge.small .ring { width: 104px; height: 104px; margin-bottom: 4px; }
-.gauge.small .ring > div { width: 82px; height: 82px; }
-.gauge.small .num { font-size: 30px; }
-.summary { display: grid; grid-template-columns: 170px 1fr; gap: 22px; align-items: center; }
-.gauge { text-align: center; }
-.gauge .ring { width: 140px; height: 140px; border-radius: 50%; display: grid; place-items: center; margin: 0 auto 8px;
+.gauge { text-align: center; flex: none; }
+.gauge .ring { width: 104px; height: 104px; border-radius: 50%; display: grid; place-items: center; margin: 0 auto 4px;
   background: conic-gradient(var(--c) calc(var(--v) * 1%), var(--line) 0); }
-.gauge .ring > div { width: 112px; height: 112px; border-radius: 50%; background: var(--panel); display: grid; place-items: center; }
-.gauge .num { font-size: 34px; font-weight: 700; line-height: 1; }
+.gauge .ring > div { width: 82px; height: 82px; border-radius: 50%; background: var(--panel); display: grid; place-items: center; }
+.gauge .num { font-size: 30px; font-weight: 700; line-height: 1; color: var(--strong); }
 .gauge .lbl { font-weight: 600; color: var(--c); }
 .facts { list-style: none; padding: 0; margin: 0; }
 .facts li { padding: 6px 0 6px 30px; position: relative; }
 .facts li::before { content: attr(data-i); position: absolute; left: 0; top: 5px; }
 .ai-box { border: 1px solid var(--ai); background: var(--ai-soft); border-radius: 12px; padding: 14px 16px; margin-top: 16px; }
-.ai-box h3 { color: var(--ai); }
-.ai-box ul { margin: 4px 0 10px 18px; padding: 0; }
-.tag { display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
-.tag.warn { background: var(--bad-soft); color: var(--bad); }
-.tag.info { background: var(--info-soft); color: var(--info); }
-.tag.ai { background: var(--ai-soft); color: var(--ai); }
-.tag.type { background: var(--accent-soft); color: var(--accent); }
-.tag.good { background: var(--good-soft); color: var(--good); }
-.issue { border: 1px solid var(--line); border-left: 4px solid var(--info); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+.ai-box h3 { color: var(--ai); font-weight: 700; }
+.ai-box ul { margin: 4px 0 10px 18px; list-style: disc; }
+/* issues */
+.issue { border: 1px solid var(--line); border-left: 4px solid var(--info); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; background: var(--panel); }
 .issue.warn { border-left-color: var(--bad); }
 .issue .head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 4px; }
-.issue .head b { font-size: 15px; }
-.issue .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; font-size: 14px; }
-.issue .grid div span { display: block; font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
+.issue .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; font-size: 14px; }
+.issue .grid2 div > span { display: block; font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
 .ex { font-size: 13px; color: var(--muted); margin-top: 6px; }
-code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 12.5px; background: var(--code); padding: 1px 5px; border-radius: 4px; word-break: break-word; }
+code { font-size: 12.5px; word-break: break-word; }
 details > summary { cursor: pointer; color: var(--accent); font-size: 14px; }
 details[open] > summary { margin-bottom: 8px; }
-table { border-collapse: collapse; width: 100%; }
-th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 14px; }
-th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
-td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.num, th.num { text-align: right !important; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .scroll { overflow-x: auto; }
-.toolbar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
-.toolbar input, .toolbar select { padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--ink); font: inherit; min-width: 220px; }
-.cols { display: grid; grid-template-columns: repeat(auto-fill, minmax(520px, 1fr)); gap: 16px; }
-.col { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; scroll-margin-top: 80px; }
-.col.flash { outline: 3px solid var(--accent); }
+/* column statistics */
+.toolbar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.toolbar .input { max-width: 300px; }
+.desc-wrap { overflow: auto; max-height: 78vh; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+table.desc { border-collapse: separate; border-spacing: 0; width: 100%; background: transparent; margin: 0 !important; }
+.desc th { position: sticky; top: 0; z-index: 2; background: var(--raised) !important; cursor: pointer; white-space: nowrap; border-bottom: 2px solid var(--line) !important; user-select: none; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted) !important; }
+.desc th:hover { color: var(--accent) !important; }
+.desc th[data-dir=asc]::after { content: " ▲"; } .desc th[data-dir=desc]::after { content: " ▼"; }
+.desc td { font-size: 13.5px; padding: 6px 10px; white-space: nowrap; max-width: 240px; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; border-color: var(--line) !important; }
+.desc .nm { position: sticky; left: 0; z-index: 1; background: var(--panel); font-weight: 600; max-width: 260px; color: var(--strong); }
+.desc th.nm { z-index: 3; }
+.desc tr.crow { cursor: pointer; }
+.desc tr.crow:hover td, .desc tr.crow:focus-visible td, .desc tr.crow.flash td { background: var(--accent-soft); }
+.desc tr.crow:focus-visible { outline: none; }
+.desc tr.crow.has-warn td.nm { box-shadow: inset 3px 0 0 var(--bad); }
+.desc .nm .open { color: var(--accent); font-weight: 400; margin-left: 6px; }
+.desc.nostats th:nth-child(n+4):nth-child(-n+15), .desc.nostats tr.crow td:nth-child(n+4):nth-child(-n+15),
+.desc.noq th:nth-child(16), .desc.noq tr.crow td:nth-child(16) { display: none; }
+.legend { margin: 8px 2px 0; }
+/* column cards: opened from the table in a window; all of them are printed */
+.col-cards { display: none; }
+.col { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; }
 .col-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; flex-wrap: wrap; }
-.col-head h3 { font-size: 17px; margin: 0; word-break: break-word; }
+.col-head h3 { font-size: 18px; font-weight: 700; margin: 0; word-break: break-word; color: var(--strong); }
 .say { margin: 8px 0; }
 .say.ai { border-left: 3px solid var(--ai); background: var(--ai-soft); padding: 6px 10px; border-radius: 0 8px 8px 0; }
 .say .src { display: block; font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
 .say.ai .src { color: var(--ai); }
 .mini { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0; }
-.mini div { background: var(--bg); border-radius: 10px; padding: 8px 10px; }
-.mini b { display: block; font-size: 17px; }
+.mini div { background: var(--raised); border-radius: 10px; padding: 8px 10px; }
+.mini b { display: block; font-size: 17px; color: var(--strong); }
 .mini span { font-size: 12px; color: var(--muted); }
 .fill { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin-top: 4px; }
 .fill i { display: block; height: 6px; background: var(--good); }
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .kv td { padding: 4px 6px; border: 0; font-size: 14px; }
 .kv td:first-child { color: var(--muted); }
+.col-issues { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
+.col-issues > b { display: block; margin-bottom: 8px; color: var(--strong); }
 svg.hist { width: 100%; height: 110px; display: block; }
 svg.hist rect { fill: var(--bar); }
 svg.hist rect:hover { fill: var(--accent); }
@@ -109,132 +127,92 @@ svg.hist .axis { fill: var(--muted); font-size: 11px; }
 .bars .t { background: var(--code); border-radius: 4px; height: 10px; }
 .bars .t i { display: block; background: var(--bar); height: 10px; border-radius: 4px; }
 .bars .n { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
-.cissue { font-size: 14px; margin: 6px 0; padding-left: 4px; }
-.cissue .todo { color: var(--muted); font-size: 13px; display: block; margin-left: 4px; }
 .agree { color: var(--good); font-weight: 600; } .differ { color: var(--fair); font-weight: 600; }
-a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
-footer { color: var(--muted); font-size: 13px; text-align: center; padding: 10px; }
+.modal-card.colm { width: min(980px, calc(100vw - 32px)); max-height: calc(100vh - 40px); }
+.colm .modal-card-body .col { border: 0; padding: 0; background: transparent; }
+.colm .col-head h3 { display: none; }
+.colm .modal-card-foot { justify-content: space-between; gap: 10px; }
+/* feedback (only where the app that made the report is reachable) */
+.fb-only { display: none; }
+body.live .box.fb-only { display: block; }
+body.live a.fb-only { display: inline; }
+.fb-out:empty { display: none; }
+.fb-out { margin-top: 10px; }
+footer.foot { color: var(--muted); font-size: 13px; text-align: center; padding: 10px; }
 /* guided tour */
 #tour-back { position: fixed; inset: 0; z-index: 90; display: none; }
-#tour-spot { position: fixed; z-index: 91; border-radius: 14px; box-shadow: 0 0 0 9999px rgba(10, 14, 22, .62); transition: all .25s ease; pointer-events: none; }
-#tour-card { position: fixed; z-index: 92; width: min(380px, calc(100vw - 32px)); background: var(--panel); color: var(--ink); border-radius: 14px; padding: 18px; box-shadow: 0 12px 40px rgba(0,0,0,.3); transition: top .25s ease, left .25s ease; }
-#tour-card h3 { margin: 0 0 6px; font-size: 17px; }
+#tour-spot { position: fixed; z-index: 91; border-radius: 14px; box-shadow: 0 0 0 9999px rgba(5, 8, 14, .7); transition: all .25s ease; pointer-events: none; }
+#tour-card { position: fixed; z-index: 92; width: min(380px, calc(100vw - 32px)); background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 14px; padding: 18px; box-shadow: 0 12px 40px rgba(0,0,0,.4); transition: top .25s ease, left .25s ease; }
+#tour-card h3 { margin: 0 0 6px; font-size: 17px; font-weight: 700; color: var(--strong); }
 #tour-card .row { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; gap: 8px; }
-#tour-card .dots { color: var(--muted); font-size: 13px; }
-@media (max-width: 760px) {
+@media screen and (max-width: 760px) {
   .verdict { flex-direction: column; text-align: center; }
-  .summary, .two, .issue .grid { grid-template-columns: 1fr; }
-  .cols { grid-template-columns: 1fr; }
+  .two, .issue .grid2 { grid-template-columns: 1fr; }
   .mini { grid-template-columns: 1fr 1fr; }
+  .tblock-body { padding: 12px; }
+}
+@media print {
+  @page { size: A4 landscape; margin: 11mm; }
+  html { scroll-behavior: auto; }
+  body { font-size: 11.5px; background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .no-print, .topbar, #tour-back, .modal, .toolbar, .fb-only, .legend, .tblock-foot a { display: none !important; }
+  main { max-width: none; padding: 0; }
+  .tblock { break-before: page; margin: 0; border-width: 1px; border-top-width: 4px; }
+  .tblock.first { break-before: auto; }
+  .tblock-head { break-after: avoid; }
+  .issue, .col, .verdict, .facts li { break-inside: avoid; }
+  h2.title { break-after: avoid; }
+  .desc-wrap { max-height: none; overflow: visible; border: 0; }
+  .desc th, .desc .nm { position: static; }
+  .desc td { white-space: normal; max-width: 200px; font-size: 10.5px; padding: 3px 6px; }
+  .desc th { font-size: 9.5px; padding: 4px 6px; }
+  .desc tr { break-inside: avoid; }
+  .col-cards { display: block !important; margin-top: 14px; }
+  .col-cards::before { content: attr(data-title); display: block; font-weight: 700; font-size: 15px; margin-bottom: 8px; }
+  .col-cards .col { margin-bottom: 10px; break-inside: auto; }
+  svg.hist { height: 80px; }
 }
 </style>
 </head>
 <body>
-<header class="top">
-  <div class="topbar">
+<header class="topbar">
+  <div class="wrap">
     <h1><span class="lang-en">{{ UI.en.report_title }}</span><span class="lang-id">{{ UI.id.report_title }}</span>
       <span class="file">{{ r.file.name }} · {{ r.file.size | bytes }} · {{ now }}</span></h1>
-    <div class="seg" id="tour-lang-btns">
-      {% for l in langs %}<button data-setlang="{{ l }}">{{ 'English' if l == 'en' else 'Indonesia' }}</button>{% endfor %}
+    <div class="buttons has-addons mb-0" id="tour-lang-btns">
+      {% for l in langs %}<button class="button is-small" data-setlang="{{ l }}">{{ 'English' if l == 'en' else 'Indonesia' }}</button>{% endfor %}
     </div>
-    <button class="btn primary" onclick="tourStart()"><span class="lang-en">❓ {{ UI.en.help }}</span><span class="lang-id">❓ {{ UI.id.help }}</span></button>
+    <button class="button is-small" onclick="toggleTheme()" title="{{ UI.en.theme }} / {{ UI.id.theme }}" aria-label="{{ UI.en.theme }}">◐</button>
+    <button class="button is-small is-link is-outlined" onclick="exportPdf()">
+      <span class="lang-en" title="{{ UI.en.export_hint }}">⬇ {{ UI.en.export_pdf }}</span><span class="lang-id" title="{{ UI.id.export_hint }}">⬇ {{ UI.id.export_pdf }}</span></button>
+    <button class="button is-small is-link" onclick="tourStart()"><span class="lang-en">❓ {{ UI.en.help }}</span><span class="lang-id">❓ {{ UI.id.help }}</span></button>
   </div>
 </header>
 
-{% macro issue_card(i, ti, lang) %}{% set U = UI[lang] %}
+{% macro issue_card(i, ti, lang, link=True) %}{% set U = UI[lang] %}
   <div class="issue {{ i.level }}">
     <div class="head">
-      <span class="tag {{ i.level }}">{{ '⚠' if i.level == 'warn' else 'ℹ' }} {{ i.title }}</span>
-      {% if i.ai %}<span class="tag ai">🤖 {{ U.ai_label }}</span>{% endif %}
-      {% if i.col %}<a href="#c{{ ti }}_{{ i.idx }}-{{ lang }}" onclick="flash(this)"><b>{{ U.column }}: {{ i.col }}</b></a>{% endif %}
+      <span class="tag {{ 'is-danger' if i.level == 'warn' else 'is-info' }} is-light">{{ '⚠' if i.level == 'warn' else 'ℹ' }}&nbsp;{{ i.title }}</span>
+      {% if i.ai %}<span class="tag is-ai">🤖 {{ U.ai_label }}</span>{% endif %}
+      {% if link and i.col %}<a href="#c{{ ti }}_{{ i.idx }}-{{ lang }}" onclick="return goCol(this)"><b>{{ U.column }}: {{ i.col }}</b></a>{% endif %}
     </div>
     <div>{{ i.text }}</div>
     {% if i.ex %}<div class="ex">{{ U.examples }}: {% for e in i.ex[:3] %}<code>{{ e[0] }}</code>{% if e[1] is string %} → <code>{{ e[1] }}</code>{% elif e[1] is number %} ×{{ e[1] | num(lang) }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</div>{% endif %}
-    <div class="grid"><div><span>{{ U.why }}</span>{{ i.why }}</div><div><span>{{ U.todo }}</span>{{ i.todo }}</div></div>
+    {% if i.why or i.todo %}<div class="grid2">{% if i.why %}<div><span>{{ U.why }}</span>{{ i.why }}</div>{% endif %}{% if i.todo %}<div><span>{{ U.todo }}</span>👉 {{ i.todo }}</div>{% endif %}</div>{% endif %}
   </div>
 {% endmacro %}
 
-{% macro page(lang) %}{% set U = UI[lang] %}
-<main class="lang-{{ lang }}" id="top-{{ lang }}">
-{% if r.tables | length > 1 %}
-<section class="card">
-  <h2>{{ U.tables_found.format(n=r.tables|length) }}</h2>
-  <ul>{% for t in r.tables %}<li><a href="#t{{ loop.index0 }}-{{ lang }}">{{ t.name }}</a> — {{ t.n_rows | num(lang) }} {{ U.rows }}, {{ t.n_cols }} {{ U.cols }}</li>{% endfor %}</ul>
-</section>
-{% endif %}
+{% macro where(t, U) %}{% set s = t.source or {} %}{% if s.pages %}{{ (U.where_page if '-' not in s.pages|string else U.where_pages).format(p=s.pages|string|replace('-', '–')) }}{% elif s.sheet %}{{ U.where_sheet.format(s=s.sheet) }}{% if s.range %} · {{ U.where_range.format(r=s.range) }}{% endif %}{% endif %}{% endmacro %}
 
-{% for t in r.tables %}{% set ti = loop.index0 %}{% set v = views[lang][ti] %}{% set sc, lvl = v.score %}
-{% set top = v.issues | selectattr('level', 'equalto', 'warn') | list %}
-<section class="card lead {{ lvl }}" {% if ti == 0 %}id="tour-summary-{{ lang }}"{% endif %}>
-  <span id="t{{ ti }}-{{ lang }}"></span>
-  {% if r.tables | length > 1 %}<div class="sub">{{ U.table }}: <b>{{ t.name }}</b></div>{% endif %}
-  <div class="verdict">
-    <div class="gauge small" style="--v: {{ sc }}; --c: var(--{{ lvl }})" title="{{ U.score_hint }}">
-      <div class="ring"><div><div class="num">{{ sc }}</div></div></div>
-      <div class="lbl">{{ U['score_' ~ lvl] }}</div>
-    </div>
-    <div>
-      <h2 class="headline">{{ U['verdict_' ~ lvl] }}</h2>
-      {% if top %}<p class="most"><b>{{ U.most_important }}:</b> {% if top[0].col %}<a href="#c{{ ti }}_{{ top[0].idx }}-{{ lang }}" onclick="flash(this)">{{ top[0].col }}</a> — {% endif %}{{ top[0].text }}</p>{% endif %}
-      <p class="sub" style="margin:4px 0 0">{{ U.fact_size.format(rows=t.n_rows | num(lang), cols=t.n_cols) }} {{ U.score }}: {{ sc }}/100.</p>
-    </div>
-  </div>
-  {% if top %}
-  <h3 style="margin-top:16px">{{ U.key_findings }}</h3>
-  {% for i in top[:3] %}{{ issue_card(i, ti, lang) }}{% endfor %}
-  {% else %}<p>{{ U.check_none }}</p>{% endif %}
-</section>
-
-<section class="card">
-  <h2>📋 {{ U.facts_title }}</h2>
-  <ul class="facts">
-    <li data-i="📋">{{ U.fact_size.format(rows=t.n_rows | num(lang), cols=t.n_cols) }}</li>
-    <li data-i="{{ '⚠️' if v.warn_cols else '✅' }}">{% if v.warn_cols %}{{ U.fact_attention.format(n=v.warn_cols) }}{% else %}{{ U.fact_ok }}{% endif %}</li>
-    <li data-i="⬜">{{ U.fact_missing.format(pct=(t.missing_cells_pct | round(1) | num(lang)) ~ '%') }}</li>
-    <li data-i="👯">{% if t.duplicates and t.duplicates.count %}{{ U.fact_dups.format(n=t.duplicates.count | num(lang)) }}{% else %}{{ U.fact_nodups }}{% endif %}</li>
-    <li data-i="🔧">{% if t.repairs.total %}{{ U.fact_repairs.format(n=t.repairs.total | num(lang)) }}{% else %}{{ U.fact_norepairs }}{% endif %}</li>
-    {% if t.approximate %}<li data-i="📐">{{ U.approx }}</li>{% endif %}
-  </ul>
-  {% if t.summary %}
-  <div class="ai-box">
-    <h3>🤖 {{ U.ai_summary }}</h3>
-    <p style="margin:4px 0 8px">{{ t.summary.about }}</p>
-    {% if t.summary.observations %}<b>{{ U.ai_obs }}</b><ul>{% for o in t.summary.observations %}<li>{{ o }}</li>{% endfor %}</ul>{% endif %}
-    <div class="sub">{{ U.ai_note }}</div>
-  </div>
-  {% endif %}
-</section>
-
-{% set rest = v.issues | reject('in', top[:3]) | list %}
-{% if rest %}
-<section class="card" {% if ti == 0 %}id="tour-check-{{ lang }}"{% endif %}>
-  <h2>🔍 {{ U.more_checks }}</h2>
-  {% for i in rest[:15] %}{{ issue_card(i, ti, lang) }}{% endfor %}
-  {% if rest | length > 15 %}<p class="sub">+ {{ rest | length - 15 }} … ({{ U.columns_title }})</p>{% endif %}
-</section>
-{% elif ti == 0 %}<span id="tour-check-{{ lang }}"></span>{% endif %}
-
-<section {% if ti == 0 %}id="tour-columns-{{ lang }}"{% endif %}>
-  <h2 style="margin:24px 0 12px">📊 {{ U.columns_title }}</h2>
-  <div class="toolbar">
-    <input type="search" placeholder="{{ U.filter }}" oninput="filterCols(this, '{{ ti }}-{{ lang }}')">
-    <select onchange="filterCols(this, '{{ ti }}-{{ lang }}')">
-      <option value="">{{ U.all_types }}</option>
-      {% for k in t.type_counts %}<option value="{{ k }}">{{ type_label(k, lang) }}</option>{% endfor %}
-      <option value="__issue">{{ U.only_issues }}</option>
-    </select>
-    <select onchange="sortCols(this, '{{ ti }}-{{ lang }}')">
-      <option value="imp">{{ U.sort_importance }}</option><option value="file">{{ U.sort_file }}</option>
-    </select>
-  </div>
-  <div class="cols" id="cols-{{ ti }}-{{ lang }}">
-  {% for c in v.order %}{% set filled = c.count - c.missing %}
-  <article class="col" id="c{{ ti }}_{{ c.index }}-{{ lang }}" data-name="{{ c.name | lower }}" data-type="{{ c.inferred_type }}" data-issue="{{ 1 if c.flags else 0 }}" data-idx="{{ c.index }}" data-imp="{{ loop.index0 }}">
+{% macro col_card(c, ti, lang) %}{% set U = UI[lang] %}{% set filled = c.count - c.missing %}
+  <article class="col" id="card-{{ ti }}_{{ c.index }}-{{ lang }}" data-title="{{ c.name }}">
     <div class="col-head">
       <div><h3>{{ c.name }}</h3>{% if c.ai_name %}<div class="sub">🤖 {{ U.ai_suggests }}: <b>{{ c.ai_name }}</b></div>{% endif %}</div>
-      <div><span class="tag type">{{ type_label(c.inferred_type, lang) }}</span>{% if c.semantic %} <span class="tag info">{{ sem_label(c.semantic, lang) }}</span>{% endif %}</div>
+      <div class="tags"><span class="tag is-link is-light">{{ type_label(c.inferred_type, lang) }}</span>{% if c.semantic %}<span class="tag is-info is-light">{{ sem_label(c.semantic, lang) }}</span>{% endif %}
+        {% set nw = c.flags | selectattr('level', 'equalto', 'warn') | list | length %}
+        {% if nw %}<span class="tag is-danger">⚠ {{ U.iss_count.format(n=nw) }}</span>{% elif c.flags %}<span class="tag is-info is-light">ℹ {{ c.flags | length }}</span>{% else %}<span class="tag is-success is-light">✓</span>{% endif %}</div>
     </div>
-    <div class="say"><span class="src">{{ U.what_is }}</span>{% for m in c.narrative %}{{ m | tr(lang) }} {% endfor %}</div>
+    {% if c.narrative %}<div class="say"><span class="src">{{ U.what_is }}</span>{% for m in c.narrative %}{{ m | tr(lang) }} {% endfor %}</div>{% endif %}
     {% if c.llm %}<div class="say ai"><span class="src">🤖 {{ U.ai_desc }}</span>{{ c.llm }}</div>{% endif %}
     <div class="mini">
       <div><b>{{ (100 * filled / (c.count or 1)) | round(1) | num(lang) }}%</b><span>{{ U.filled }}</span><div class="fill"><i style="width:{{ 100 * filled / (c.count or 1) }}%"></i></div></div>
@@ -277,15 +255,15 @@ footer { color: var(--muted); font-size: 13px; text-align: center; padding: 10px
         {% endif %}
       </div>
     </div>
+    <div class="col-issues">
     {% if c.flags %}
-    <div style="margin-top:10px"><b>{{ U.issues }}</b>
-      {% for f in c.flags %}{% set fi = flag_info(f.code, lang) %}
-      <div class="cissue"><span class="tag {{ f.level }}">{{ fi.title }}</span>{% if f.ai %} <span class="tag ai">🤖</span>{% endif %} {{ (f.m or f.msg) | tr(lang) }}
-        {% if f.examples %}<span class="ex">— {% for e in f.examples[:3] %}<code>{{ e[0] }}</code>{% if e[1] is string %} → <code>{{ e[1] }}</code>{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}
-        {% if fi.todo %}<span class="todo">👉 {{ fi.todo }}</span>{% endif %}</div>
+      <b>{{ U.issues }} ({{ c.flags | length }})</b>
+      {% for f in (c.flags | sort(attribute='level', reverse=True)) %}{% set fi = flag_info(f.code, lang) %}
+        {{ issue_card(dict(level=f.level, title=fi.title, ai=f.ai, col=None, idx=None, text=(f.m or f.msg) | tr(lang),
+                           ex=f.examples or [], why=fi.why, todo=fi.todo), ti, lang, False) }}
       {% endfor %}
+    {% else %}<div class="sub">✅ {{ U.no_issues }}</div>{% endif %}
     </div>
-    {% else %}<div class="sub" style="margin-top:8px">✅ {{ U.no_issues }}</div>{% endif %}
     <details style="margin-top:10px"><summary>{{ U.more }}</summary>
       <table class="kv">
         <tr><td>{{ U.physical }}</td><td><code>{{ c.physical_type }}</code></td></tr>
@@ -302,14 +280,156 @@ footer { color: var(--muted); font-size: 13px; text-align: center; padding: 10px
       {% for n in c.notes %}<div class="sub">ℹ {{ n | tr(lang) }}</div>{% endfor %}
     </details>
   </article>
-  {% endfor %}
-  </div>
+{% endmacro %}
+
+{% macro page(lang) %}{% set U = UI[lang] %}{% set F = r.features or {} %}
+{% set Fq, Fdesc, Funi, Fdup, Fmem = F.get('quality', True), F.get('descriptive', True), F.get('univariate', True), F.get('duplicates', True), F.get('memory', True) %}
+{% set NT = r.tables | length %}
+<main class="lang-{{ lang }}" id="top-{{ lang }}">
+{% if r.skills %}
+<section class="box">
+  <h2 class="title is-5">🧠 {{ U.skills_title }}</h2>
+  <p class="sub">{{ U.skills_hint }} <a class="fb-only" href="/memory" target="_blank">{{ U.fb_memory }}</a></p>
+  <ul style="list-style:disc;margin-left:20px">{% for s in r.skills %}<li><b>{{ s.title }}</b> — {{ s.instruction }}</li>{% endfor %}</ul>
 </section>
-<h2 style="margin:28px 0 12px" class="sub">📎 {{ U.background }}</h2>
-<section class="card" {% if ti == 0 %}id="tour-fixes-{{ lang }}"{% endif %}>
-  <h2>🔧 {{ U.fixes_title }}</h2>
+{% endif %}
+{% if NT > 1 %}
+<section class="box">
+  <h2 class="title is-5">🗂 {{ U.tables_found.format(n=NT) }}</h2>
+  <div class="scroll"><table class="table is-fullwidth is-hoverable overview">
+    <thead><tr><th>#</th><th>{{ U.table }}</th><th>{{ U.where }}</th><th class="num">{{ U.rows }}</th><th class="num">{{ U.cols }}</th>{% if Fq %}<th>{{ U.score }}</th>{% endif %}<th class="no-print"></th></tr></thead>
+    <tbody>{% for t in r.tables %}{% set sc, lvl = views[lang][loop.index0].score %}
+    <tr><td>{{ loop.index }}</td><td><a href="#t{{ loop.index0 }}-{{ lang }}"><b>{{ t.name }}</b></a></td><td class="sub">{{ where(t, U) }}</td>
+      <td class="num">{{ t.n_rows | num(lang) }}</td><td class="num">{{ t.n_cols }}</td>
+      {% if Fq %}<td><span class="tag {{ {'good': 'is-success', 'fair': 'is-warning', 'bad': 'is-danger'}[lvl] }} is-light">{{ sc }} · {{ U['score_' ~ lvl] }}</span></td>{% endif %}
+      <td class="no-print"><a class="button is-small" href="#t{{ loop.index0 }}-{{ lang }}">{{ U.go_to }} ↓</a></td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+</section>
+{% endif %}
+
+{% for t in r.tables %}{% set ti = loop.index0 %}{% set v = views[lang][ti] %}{% set sc, lvl = v.score %}
+{% set top = v.issues | selectattr('level', 'equalto', 'warn') | list %}
+<section class="tblock {{ lvl if Fq else '' }}{{ ' first' if ti == 0 else '' }}" id="t{{ ti }}-{{ lang }}">
+  <div class="tblock-head">
+    {% if NT > 1 %}<span class="tag is-link is-medium">{{ U.table_n.format(i=ti + 1, n=NT) }}</span>{% endif %}
+    <span class="tname">{{ t.name }}</span>
+    <span class="tmeta">{{ where(t, U) }}{% if where(t, U) | trim %} · {% endif %}{{ t.n_rows | num(lang) }} {{ U.rows }} · {{ t.n_cols }} {{ U.cols }}</span>
+  </div>
+  <div class="tblock-body">
+{% if Fq %}
+<section class="box lead {{ lvl }}" {% if ti == 0 %}id="tour-summary-{{ lang }}"{% endif %}>
+  <div class="verdict">
+    <div class="gauge" style="--v: {{ sc }}; --c: var(--{{ lvl }})" title="{{ U.score_hint }}">
+      <div class="ring"><div><div class="num">{{ sc }}</div></div></div>
+      <div class="lbl">{{ U['score_' ~ lvl] }}</div>
+    </div>
+    <div>
+      <h2 class="headline">{{ U['verdict_' ~ lvl] }}</h2>
+      {% if top %}<p class="most"><b>{{ U.most_important }}:</b> {% if top[0].col %}<a href="#c{{ ti }}_{{ top[0].idx }}-{{ lang }}" onclick="return goCol(this)">{{ top[0].col }}</a> — {% endif %}{{ top[0].text }}</p>{% endif %}
+      <p class="sub" style="margin:4px 0 0">{{ U.fact_size.format(rows=t.n_rows | num(lang), cols=t.n_cols) }} {{ U.score }}: {{ sc }}/100.</p>
+    </div>
+  </div>
+  {% if top %}
+  <h3 class="title is-6" style="margin:16px 0 8px">{{ U.key_findings }}</h3>
+  {% for i in top[:3] %}{{ issue_card(i, ti, lang) }}{% endfor %}
+  {% else %}<p class="mt-3">{{ U.check_none }}</p>{% endif %}
+</section>
+{% elif ti == 0 %}<span id="tour-summary-{{ lang }}"></span>{% endif %}
+
+<section class="box">
+  <h2 class="title is-5">📋 {{ U.facts_title }}</h2>
+  <ul class="facts">
+    <li data-i="📋">{{ U.fact_size.format(rows=t.n_rows | num(lang), cols=t.n_cols) }}</li>
+    <li data-i="{{ '⚠️' if v.warn_cols else '✅' }}">{% if v.warn_cols %}{{ U.fact_attention.format(n=v.warn_cols) }}{% else %}{{ U.fact_ok }}{% endif %}</li>
+    <li data-i="⬜">{{ U.fact_missing.format(pct=(t.missing_cells_pct | round(1) | num(lang)) ~ '%') }}</li>
+    {% if Fdup %}<li data-i="👯">{% if t.duplicates and t.duplicates.count %}{{ U.fact_dups.format(n=t.duplicates.count | num(lang)) }}{% else %}{{ U.fact_nodups }}{% endif %}</li>{% endif %}
+    <li data-i="🔧">{% if t.repairs.total %}{{ U.fact_repairs.format(n=t.repairs.total | num(lang)) }}{% else %}{{ U.fact_norepairs }}{% endif %}</li>
+    {% if t.approximate %}<li data-i="📐">{{ U.approx }}</li>{% endif %}
+  </ul>
+  {% if t.summary %}
+  <div class="ai-box">
+    <h3>🤖 {{ U.ai_summary }}</h3>
+    <p style="margin:4px 0 8px">{{ t.summary.about }}</p>
+    {% if t.summary.observations %}<b>{{ U.ai_obs }}</b><ul>{% for o in t.summary.observations %}<li>{{ o }}</li>{% endfor %}</ul>{% endif %}
+    <div class="sub">{{ U.ai_note }}</div>
+  </div>
+  {% endif %}
+</section>
+
+{% set rest = v.issues | reject('in', top[:3]) | list %}
+{% if rest and Fq %}
+<section class="box" {% if ti == 0 %}id="tour-check-{{ lang }}"{% endif %}>
+  <h2 class="title is-5">🔍 {{ U.more_checks }}</h2>
+  {% for i in rest[:15] %}{{ issue_card(i, ti, lang) }}{% endfor %}
+  {% if rest | length > 15 %}<p class="sub">+ {{ rest | length - 15 }} … ({{ U.columns_title }})</p>{% endif %}
+</section>
+{% elif ti == 0 %}<span id="tour-check-{{ lang }}"></span>{% endif %}
+
+{% if Fdesc or Funi %}
+<section class="box" {% if ti == 0 %}id="tour-columns-{{ lang }}"{% endif %}>
+  <h2 class="title is-5">📊 {{ U.columns_title }}</h2>
+  <div class="toolbar">
+    <input class="input is-small" type="search" placeholder="{{ U.filter }}" oninput="filterCols(this, '{{ ti }}-{{ lang }}')">
+    <div class="select is-small"><select onchange="filterCols(this, '{{ ti }}-{{ lang }}')">
+      <option value="">{{ U.all_types }}</option>
+      {% for k in t.type_counts %}<option value="{{ k }}">{{ type_label(k, lang) }}</option>{% endfor %}
+      <option value="__issue">{{ U.only_issues }}</option>
+    </select></div>
+    <div class="select is-small"><select onchange="sortCols(this, '{{ ti }}-{{ lang }}')">
+      <option value="imp">{{ U.sort_importance }}</option><option value="file">{{ U.sort_file }}</option>
+    </select></div>
+  </div>
+  <p class="sub" style="margin:-4px 0 10px">{{ U.d_hint }}</p>
+  <div class="desc-wrap">
+  <table class="table is-narrow desc{% if not Fdesc %} nostats{% endif %}{% if not Fq %} noq{% endif %}" id="cols-{{ ti }}-{{ lang }}">
+    <thead><tr>
+      <th data-k="idx" class="num">#</th><th data-k="name" class="nm">{{ U.column }}</th><th data-k="type">{{ U.d_type }}</th>
+      <th data-k="count" class="num" title="{{ U.d_count }}">count</th><th data-k="missing" class="num" title="{{ U.empty }}">{{ U.d_missing }}</th>
+      <th data-k="unique" class="num" title="{{ U.different }}">unique</th><th data-k="top" title="{{ U.d_top }}">top</th>
+      <th data-k="freq" class="num" title="{{ U.d_freq }}">freq</th><th data-k="mean" class="num" title="{{ U.avg }}">mean</th>
+      <th data-k="std" class="num" title="{{ U.std }}">std</th><th data-k="min" class="num" title="{{ U.min }}">min</th>
+      <th data-k="q1" class="num">25%</th><th data-k="q2" class="num" title="{{ U.median }}">50%</th><th data-k="q3" class="num">75%</th>
+      <th data-k="max" class="num" title="{{ U.max }}">max</th><th data-k="iss" class="num" title="{{ U.iss_head }}">⚠ {{ U.issues }}</th>
+    </tr></thead>
+    <tbody>
+  {% for c in v.order %}{% set filled = c.count - c.missing %}{% set n = c.numeric %}{% set d = c.datetime %}
+  {% set warn = c.flags | selectattr('level', 'equalto', 'warn') | list | length %}
+    <tr class="crow{% if warn %} has-warn{% endif %}" id="c{{ ti }}_{{ c.index }}-{{ lang }}" data-name="{{ c.name | lower }}" data-type="{{ c.inferred_type }}" data-issue="{{ 1 if c.flags else 0 }}" data-idx="{{ c.index }}" data-imp="{{ loop.index0 }}" tabindex="0" onclick="openCol(this)" onkeydown="if (event.key === 'Enter') openCol(this)">
+      <td class="num" data-v="{{ c.index }}">{{ c.index + 1 }}</td>
+      <td class="nm" data-v="{{ c.name | lower }}" title="{{ c.name }}">{{ c.name }}<span class="open no-print" aria-hidden="true">›</span></td>
+      <td data-v="{{ c.inferred_type }}">{{ type_label(c.inferred_type, lang) }}{% if c.semantic %} <span class="sub">· {{ sem_label(c.semantic, lang) }}</span>{% endif %}</td>
+      <td class="num" data-v="{{ filled }}">{{ filled | num(lang) }}</td>
+      <td class="num" data-v="{{ c.missing }}">{% if c.missing %}{{ c.missing | num(lang) }} <span class="sub">({{ (100 * c.missing / (c.count or 1)) | round(1) | num(lang) }}%)</span>{% else %}–{% endif %}</td>
+      <td class="num" data-v="{{ c.distinct }}">{{ c.distinct | num(lang) }}</td>
+      {% if c.top_values %}<td data-v="{{ c.top_values[0][0] | lower }}" title="{{ c.top_values[0][0] }}">{{ c.top_values[0][0] }}</td><td class="num" data-v="{{ c.top_values[0][1] }}">{{ c.top_values[0][1] | num(lang) }}</td>
+      {% else %}<td data-v=""></td><td class="num" data-v=""></td>{% endif %}
+      {% if n %}
+      <td class="num" data-v="{{ n.mean }}">{{ n.mean | num(lang) }}</td><td class="num" data-v="{{ n.std }}">{{ n.std | num(lang) }}</td>
+      <td class="num" data-v="{{ n.min }}">{{ n.min | num(lang) }}</td><td class="num" data-v="{{ n.q1 }}">{{ n.q1 | num(lang) }}</td>
+      <td class="num" data-v="{{ n.median }}">{{ n.median | num(lang) }}</td><td class="num" data-v="{{ n.q3 }}">{{ n.q3 | num(lang) }}</td>
+      <td class="num" data-v="{{ n.max }}">{{ n.max | num(lang) }}</td>
+      {% elif d %}
+      <td></td><td></td><td class="num" data-v="{{ d.min }}">{{ (d.min or '')[:10] }}</td><td></td><td></td><td></td><td class="num" data-v="{{ d.max }}">{{ (d.max or '')[:10] }}</td>
+      {% else %}<td></td><td></td><td></td><td></td><td></td><td></td><td></td>{% endif %}
+      {% set titles = [] %}{% for f in c.flags %}{% set _ = titles.append(('⚠ ' if f.level == 'warn' else 'ℹ ') ~ flag_info(f.code, lang).title) %}{% endfor %}
+      <td class="num" data-v="{{ warn * 100 + c.flags | length }}" title="{{ titles | join('\n') }}">{% if warn %}<span class="tag is-danger is-light">⚠ {{ warn }}</span>{% elif c.flags %}<span class="tag is-info is-light">ℹ {{ c.flags | length }}</span>{% else %}<span class="has-text-success">✓</span>{% endif %}</td>
+    </tr>
+  {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if Fq %}<p class="sub legend">{{ U.iss_legend }}</p>{% endif %}
+  {# the card always opens: with univariate analysis off it has no charts, but still the counts and every issue #}
+  <div class="col-cards" id="cards-{{ ti }}-{{ lang }}" data-title="{{ U.cards_title }} — {{ t.name }}">{% for c in v.order %}{{ col_card(c, ti, lang) }}{% endfor %}</div>
+</section>
+{% elif ti == 0 %}<span id="tour-columns-{{ lang }}"></span>{% endif %}
+
+<div class="part-title">📎 {{ U.background }}</div>
+<section class="box" {% if ti == 0 %}id="tour-fixes-{{ lang }}"{% endif %}>
+  <h2 class="title is-5">🔧 {{ U.fixes_title }}</h2>
   {% if t.repairs['items'] %}
-  <div class="scroll"><table>
+  <div class="scroll"><table class="table is-fullwidth is-narrow">
     {% for it in t.repairs['items'] %}
     <tr><td>{{ repair_label(it.kind, lang) }}</td><td class="num">{{ it.count | num(lang) }}×</td><td>
       {% if it.examples %}<details><summary>{{ U.show_examples }}</summary>
@@ -318,13 +438,13 @@ footer { color: var(--muted); font-size: 13px; text-align: center; padding: 10px
     </td></tr>
     {% endfor %}
   </table></div>
-  {% else %}<p><span class="tag good">✓</span> {{ U.fixes_none }}</p>{% endif %}
+  {% else %}<p><span class="tag is-success is-light">✓</span> {{ U.fixes_none }}</p>{% endif %}
   {% if t.repairs.notes %}<details style="margin-top:10px"><summary>{{ U.tech_details }}</summary>
     {% for n in t.repairs.notes %}<div class="sub">• {{ n | tr(lang) }}</div>{% endfor %}</details>{% endif %}
   {% if t.ai_rows %}
   <details style="margin-top:12px"><summary>🤖 {{ U.ai_rows }} ({{ t.ai_rows | length }})</summary>
     <p class="sub">{{ U.ai_rows_hint }}</p>
-    <div class="scroll"><table>
+    <div class="scroll"><table class="table is-fullwidth is-narrow">
       <tr><th>{{ U.line }}</th><th>{{ U.auto_fix }}</th><th>{{ U.ai_fix }}</th><th></th></tr>
       {% for a in t.ai_rows %}<tr><td>{{ a.line }}<div class="sub"><code>{{ a.raw }}</code></div></td>
         <td><code>{{ a.chosen | join(' ⎮ ') }}</code></td><td><code>{{ a.ai | join(' ⎮ ') }}</code></td>
@@ -334,66 +454,228 @@ footer { color: var(--muted); font-size: 13px; text-align: center; padding: 10px
 </section>
 
 {% if t.correlations %}
-<section class="card">
-  <h2>🔗 {{ U.correlations }}</h2>
+<section class="box">
+  <h2 class="title is-5">🔗 {{ U.correlations }}</h2>
   <p class="sub">{{ U.corr_hint }}</p>
-  <table>{% for c in t.correlations[:8] %}<tr><td>{{ c.a }}</td><td>↔</td><td>{{ c.b }}</td><td class="num">{{ '+' if c.r > 0 else '' }}{{ c.r | round(2) | num(lang) }}</td></tr>{% endfor %}</table>
+  <table class="table is-narrow">{% for c in t.correlations[:8] %}<tr><td>{{ c.a }}</td><td>↔</td><td>{{ c.b }}</td><td class="num">{{ '+' if c.r > 0 else '' }}{{ c.r | round(2) | num(lang) }}</td></tr>{% endfor %}</table>
+</section>
+{% endif %}
+  </div>
+  <div class="tblock-foot">
+    <span>■ {{ U.end_of_table.format(i=ti + 1, name=t.name) }}</span>
+    <span>{% if Fmem %}<a class="fb-only" href="#fb-{{ lang }}" onclick="fbFor({{ ti }})">💬 {{ U.fb_this_table }}</a> · {% endif %}
+      {% if not loop.last %}<a href="#t{{ ti + 1 }}-{{ lang }}">{{ U.next_table }} ↓</a> · {% endif %}<a href="#top-{{ lang }}">{{ U.back_top }} ↑</a></span>
+  </div>
+</section>
+{% endfor %}
+
+{% if Fmem %}
+<section class="box fb-only" id="fb-{{ lang }}">
+  <h2 class="title is-5">💬 {{ U.fb_title if NT == 1 else U.fb_title_many }}</h2>
+  <p class="sub mb-3">{{ U.fb_hint }}</p>
+  {% if NT > 1 %}<div class="field"><label class="label is-small">{{ U.fb_which }}</label>
+    <div class="select"><select class="fb-table">{% for t in r.tables %}<option value="{{ loop.index0 }}">{{ U.table }} {{ loop.index }} — {{ t.name }}</option>{% endfor %}</select></div></div>{% endif %}
+  <div class="field"><textarea class="textarea fb-text" rows="3" maxlength="2000"></textarea></div>
+  <div class="buttons"><button class="button is-link" onclick="sendFb(this)">{{ U.fb_send }}</button></div>
+  <div class="fb-out"></div>
 </section>
 {% endif %}
 
-{% endfor %}
-
-<section class="card" style="margin-top:24px">
+<section class="box" style="margin-top:24px">
   <details><summary>📖 {{ U.glossary }}</summary>
-    <ul>{% for k in ('g_row', 'g_col', 'g_median', 'g_dup', 'g_outlier') %}<li>{{ U[k] }}</li>{% endfor %}</ul>
+    <ul style="list-style:disc;margin-left:20px">{% for k in ('g_row', 'g_col', 'g_median', 'g_dup', 'g_outlier') %}<li>{{ U[k] }}</li>{% endfor %}</ul>
   </details>
   {% if r.warnings %}<details style="margin-top:8px"><summary>{{ U.run_notes }}</summary>{% for w in r.warnings %}<div class="sub">• {{ w }}</div>{% endfor %}</details>{% endif %}
 </section>
-<footer>{{ U.engine }}: {{ r.engine }} · {{ U.duration }}: {{ r.elapsed_s | round(1) | num(lang) }} {{ U.seconds }}{% if r.llm.used %} · AI: {{ r.llm.model }}{% endif %} · <a href="#top-{{ lang }}">{{ U.back_top }} ↑</a></footer>
+<footer class="foot">{{ U.engine }}: {{ r.engine }} · {{ U.duration }}: {{ r.elapsed_s | round(1) | num(lang) }} {{ U.seconds }}{% if r.llm.used %} · AI: {{ r.llm.model }}{% endif %} · <a href="#top-{{ lang }}">{{ U.back_top }} ↑</a></footer>
 </main>
 {% endmacro %}
 
 {% for l in langs %}{{ page(l) }}{% endfor %}
 
+<div class="modal" id="col-modal" role="dialog" aria-modal="true" aria-labelledby="cm-title">
+  <div class="modal-background" onclick="closeCol()"></div>
+  <div class="modal-card colm">
+    <header class="modal-card-head"><p class="modal-card-title" id="cm-title"></p><button class="delete" id="cm-close" onclick="closeCol()"></button></header>
+    <section class="modal-card-body" id="cm-body"></section>
+    <footer class="modal-card-foot">
+      <button class="button" id="cm-prev" onclick="stepCol(-1)"></button>
+      <span class="sub" id="cm-pos"></span>
+      <button class="button is-link" id="cm-next" onclick="stepCol(1)"></button>
+    </footer>
+  </div>
+</div>
+
 <div id="tour-back"><div id="tour-spot"></div><div id="tour-card"><h3 id="tour-title"></h3><div id="tour-text"></div>
-  <div class="row"><span class="dots" id="tour-dots"></span><span>
-    <button class="btn" id="tour-prev"></button> <button class="btn primary" id="tour-next"></button></span></div></div></div>
+  <div class="row"><span class="sub" id="tour-dots"></span><span class="buttons mb-0">
+    <button class="button is-small" id="tour-prev"></button><button class="button is-small is-link" id="tour-next"></button></span></div></div></div>
 
 <script>
 var TOUR = {{ tour_json }}, BTN = {{ ui_json }}, step = 0;
 function lang() { return document.documentElement.getAttribute('data-lang'); }
 function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
+function fmt(s, p) { for (var x in p) s = s.replace('{' + x + '}', p[x]); return s; }
 function setLang(l) {
+  closeCol();
   document.documentElement.setAttribute('data-lang', l);
   document.documentElement.lang = l;
-  document.querySelectorAll('[data-setlang]').forEach(function (b) { b.classList.toggle('on', b.dataset.setlang === l); });
+  document.querySelectorAll('[data-setlang]').forEach(function (b) { b.classList.toggle('is-link', b.dataset.setlang === l); b.classList.toggle('is-selected', b.dataset.setlang === l); });
   store('autoeda-lang', l);
   if (document.getElementById('tour-back').style.display === 'block') showStep();
 }
 document.querySelectorAll('[data-setlang]').forEach(function (b) { b.onclick = function () { setLang(b.dataset.setlang); }; });
 setLang(store('autoeda-lang') || document.documentElement.getAttribute('data-lang'));
+function toggleTheme() {
+  var th = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', th); store('autoeda-theme', th);
+}
 
 function filterCols(el, key) {
-  var box = document.getElementById('cols-' + key), bar = el.parentNode;
+  var box = document.getElementById('cols-' + key), bar = el.closest('.toolbar');
   var q = bar.querySelector('input').value.toLowerCase(), t = bar.querySelector('select').value;
-  box.querySelectorAll('.col').forEach(function (c) {
+  box.querySelectorAll('tr.crow').forEach(function (c) {
     var ok = c.dataset.name.indexOf(q) >= 0 && (!t || (t === '__issue' ? c.dataset.issue === '1' : c.dataset.type === t));
     c.style.display = ok ? '' : 'none';
   });
 }
+function sortBy(th) {
+  var table = th.closest('table'), body = table.tBodies[0], i = Array.prototype.indexOf.call(th.parentNode.children, th);
+  var dir = th.dataset.dir === 'asc' ? 'desc' : 'asc';
+  th.parentNode.querySelectorAll('th').forEach(function (h) { delete h.dataset.dir; });
+  th.dataset.dir = dir;
+  var rows = Array.prototype.slice.call(body.querySelectorAll('tr.crow'));
+  function val(tr) { var v = tr.children[i].dataset.v; return v === undefined ? '' : v; }
+  rows.sort(function (a, b) {
+    var x = val(a), y = val(b), nx = parseFloat(x), ny = parseFloat(y), r;
+    if (x === '' || y === '') r = (x === '') - (y === '');            // empty cells last
+    else r = (!isNaN(nx) && !isNaN(ny) && String(nx) !== 'NaN') ? nx - ny : x.localeCompare(y);
+    return x === '' || y === '' ? r : (dir === 'asc' ? r : -r);
+  }).forEach(function (tr) { body.appendChild(tr); });
+}
+document.querySelectorAll('table.desc thead th').forEach(function (th) { th.onclick = function () { sortBy(th); }; });
 function sortCols(sel, key) {
-  var box = document.getElementById('cols-' + key), attr = sel.value === 'file' ? 'idx' : 'imp';
-  Array.prototype.slice.call(box.children).sort(function (a, b) { return a.dataset[attr] - b.dataset[attr]; })
-    .forEach(function (c) { box.appendChild(c); });
+  var body = document.getElementById('cols-' + key).tBodies[0], attr = sel.value === 'file' ? 'idx' : 'imp';
+  Array.prototype.slice.call(body.querySelectorAll('tr.crow')).sort(function (a, b) { return a.dataset[attr] - b.dataset[attr]; })
+    .forEach(function (c) { body.appendChild(c); });
 }
-function flash(a) {
-  var el = document.querySelector(a.getAttribute('href'));
-  if (!el) return;
-  el.style.display = '';
-  el.classList.add('flash'); setTimeout(function () { el.classList.remove('flash'); }, 1800);
+
+// --- column card window ----------------------------------------------------------------
+var CUR = null;      // the table row whose card is open
+function openCol(tr) {
+  if (!tr) return;
+  var card = document.getElementById(tr.id.replace(/^c/, 'card-'));
+  if (!card) return;
+  var U = BTN[lang()], body = document.getElementById('cm-body'), copy = card.cloneNode(true);
+  copy.removeAttribute('id');
+  body.innerHTML = ''; body.appendChild(copy); body.scrollTop = 0;
+  document.getElementById('cm-title').textContent = card.dataset.title;
+  var rows = visibleRows(tr), at = rows.indexOf(tr);
+  document.getElementById('cm-pos').textContent = fmt(U.col_pos, { i: at + 1, n: rows.length });
+  document.getElementById('cm-prev').textContent = '← ' + U.prev_col;
+  document.getElementById('cm-next').textContent = U.next_col + ' →';
+  document.getElementById('cm-prev').disabled = at <= 0;
+  document.getElementById('cm-next').disabled = at >= rows.length - 1;
+  document.getElementById('cm-close').setAttribute('aria-label', U.close);
+  if (CUR) CUR.classList.remove('flash');
+  CUR = tr; tr.classList.add('flash');
+  document.getElementById('col-modal').classList.add('is-active');
+  document.documentElement.classList.add('is-clipped');
+  document.getElementById('cm-close').focus();
 }
+function visibleRows(tr) { return Array.prototype.filter.call(tr.parentNode.children, function (r) { return r.style.display !== 'none'; }); }
+function stepCol(d) {
+  if (!CUR) return;
+  var rows = visibleRows(CUR), next = rows[rows.indexOf(CUR) + d];
+  if (next) { openCol(next); next.scrollIntoView({ block: 'nearest' }); }
+}
+function closeCol() {
+  var m = document.getElementById('col-modal');
+  if (!m || !m.classList.contains('is-active')) return;
+  m.classList.remove('is-active'); document.documentElement.classList.remove('is-clipped');
+  if (CUR) { CUR.classList.remove('flash'); CUR.focus({ preventScroll: true }); CUR = null; }
+}
+function goCol(a) {        // a link to a column (from the findings): show its row and open its card
+  var tr = document.querySelector(a.getAttribute('href'));
+  if (!tr) return true;
+  tr.style.display = '';
+  tr.scrollIntoView({ block: 'center' });
+  openCol(tr);
+  return false;
+}
+document.addEventListener('keydown', function (e) {
+  if (!CUR) return;
+  if (e.key === 'Escape') closeCol();
+  else if (e.key === 'ArrowRight') stepCol(1);
+  else if (e.key === 'ArrowLeft') stepCol(-1);
+});
+
+// --- PDF: the browser's print window ("Save as PDF"), light colours, every card and detail open ---
+var PRINT = null;
+function exportPdf() { closeCol(); window.print(); }
+window.addEventListener('beforeprint', function () {
+  PRINT = { theme: document.documentElement.getAttribute('data-theme'), closed: [] };
+  document.documentElement.setAttribute('data-theme', 'light');
+  document.querySelectorAll('details:not([open])').forEach(function (d) { d.open = true; PRINT.closed.push(d); });
+});
+window.addEventListener('afterprint', function () {
+  if (!PRINT) return;
+  document.documentElement.setAttribute('data-theme', PRINT.theme);
+  PRINT.closed.forEach(function (d) { d.open = false; });
+  PRINT = null;
+});
+
+// --- comments go back to the app that made the report; a downloaded copy has nowhere to send them
+var REPORT_ID = {{ r.report_id | tojson }};
+if (REPORT_ID && /^https?:/.test(location.protocol)) document.body.classList.add('live');
+function fbFor(ti) {
+  var box = document.getElementById('fb-' + lang()), sel = box && box.querySelector('.fb-table');
+  if (sel) sel.value = String(ti);
+  setTimeout(function () { box.querySelector('.fb-text').focus(); }, 300);
+}
+function sendFb(btn) {
+  var box = btn.closest('.fb-only'), text = box.querySelector('.fb-text').value.trim(), out = box.querySelector('.fb-out'), U = BTN[lang()];
+  var sel = box.querySelector('.fb-table'), ti = sel ? parseInt(sel.value, 10) : 0;
+  if (!text) return;
+  btn.disabled = true; btn.classList.add('is-loading'); out.textContent = U.fb_sending;
+  fetch('/api/jobs/' + REPORT_ID + '/feedback', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ table: ti, comment: text }) })
+    .then(function (r) { if (!r.ok) throw r; return r.json(); })
+    .then(function (j) {
+      btn.disabled = false; btn.classList.remove('is-loading'); out.innerHTML = '';
+      var p = document.createElement('div'); p.className = 'notification is-link is-light';
+      if (j.action === 'none' || !j.skill) p.textContent = U.fb_none;
+      else {
+        var b = document.createElement('b'); b.textContent = (j.action === 'update' ? U.fb_updated : U.fb_new) + ': ' + (j.skill.title || '');
+        p.appendChild(b); p.appendChild(document.createTextNode(' — ' + (j.skill.instruction || '')));
+      }
+      out.appendChild(p);
+      var row = document.createElement('div'); row.className = 'buttons';
+      var a = document.createElement('a'); a.className = 'button is-small'; a.href = '/memory'; a.target = '_blank'; a.textContent = U.fb_memory; row.appendChild(a);
+      if (j.can_rerun && j.action !== 'none') {
+        var rb = document.createElement('button'); rb.className = 'button is-small is-link'; rb.textContent = '↻ ' + U.fb_rerun;
+        rb.onclick = function () { rerun(rb, out); }; row.appendChild(rb);
+      }
+      out.appendChild(row);
+    })
+    .catch(function () { btn.disabled = false; btn.classList.remove('is-loading'); out.textContent = U.fb_error; });
+}
+function rerun(btn, out) {
+  btn.disabled = true;
+  fetch('/api/jobs/' + REPORT_ID + '/restart', { method: 'POST' }).then(function (r) {
+    if (!r.ok) throw r;
+    out.textContent = BTN[lang()].fb_rerunning;
+    var poll = setInterval(function () {
+      fetch('/api/jobs/' + REPORT_ID).then(function (r) { return r.json(); }).then(function (j) {
+        if (j.status === 'done') { clearInterval(poll); location.reload(); }
+        else if (j.status === 'failed' || j.status === 'cancelled') { clearInterval(poll); out.textContent = j.message || BTN[lang()].fb_error; }
+      });
+    }, 3000);
+  }).catch(function () { btn.disabled = false; out.textContent = BTN[lang()].fb_error; });
+}
+
+// --- guided tour ---------------------------------------------------------------------------
 function target(sel) {
-  if (sel === '#tour-lang') return document.getElementById('tour-lang-btns');
+  if (sel === '#tour-lang') return document.getElementById('tour-lang-btns').parentNode;
   return document.querySelector(sel + '-' + lang());
 }
 function showStep() {
@@ -405,7 +687,7 @@ function showStep() {
   document.getElementById('tour-prev').style.visibility = step ? 'visible' : 'hidden';
   document.getElementById('tour-next').textContent = step === steps.length - 1 ? BTN[lang()].done : BTN[lang()].next;
   var spot = document.getElementById('tour-spot'), card = document.getElementById('tour-card');
-  if (!el) { spot.style.cssText = 'left:50%;top:40%;width:0;height:0'; card.style.left = '50%'; card.style.top = '40%'; return; }
+  if (!el || !el.getClientRects().length) { spot.style.cssText = 'left:50%;top:40%;width:0;height:0'; card.style.left = '50%'; card.style.top = '40%'; return; }
   el.scrollIntoView({ block: 'center', behavior: 'instant' in document.documentElement.style ? 'instant' : 'auto' });
   setTimeout(function () {
     var r = el.getBoundingClientRect(), pad = 8, h = Math.min(r.height, window.innerHeight * 0.6);
@@ -417,14 +699,15 @@ function showStep() {
     card.style.left = Math.min(Math.max(12, r.left), window.innerWidth - cw - 12) + 'px';
   }, 60);
 }
-function tourStart() { step = 0; document.getElementById('tour-back').style.display = 'block'; showStep(); }
+function tourStart() { closeCol(); step = 0; document.getElementById('tour-back').style.display = 'block'; showStep(); }
 function tourEnd() { document.getElementById('tour-back').style.display = 'none'; store('autoeda-report-tour', '1'); }
 document.getElementById('tour-next').onclick = function () { if (step < TOUR[lang()].length - 1) { step++; showStep(); } else tourEnd(); };
 document.getElementById('tour-prev').onclick = function () { if (step > 0) { step--; showStep(); } };
 document.getElementById('tour-back').addEventListener('click', function (e) { if (e.target.id === 'tour-back') tourEnd(); });
-document.addEventListener('keydown', function (e) { if (e.key === 'Escape') tourEnd(); });
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !CUR) tourEnd(); });
 window.addEventListener('resize', function () { if (document.getElementById('tour-back').style.display === 'block') showStep(); });
-if (!store('autoeda-report-tour')) setTimeout(tourStart, 600);
+if (location.hash === '#print') setTimeout(exportPdf, 500);
+else if (!store('autoeda-report-tour')) setTimeout(tourStart, 600);
 </script>
 </body>
 </html>

@@ -19,6 +19,7 @@ class Ollama:
         self.model = model or config.OLLAMA_MODEL
         self.host = host or config.OLLAMA_HOST
         self._think_ok = True
+        self.lessons = ""        # skills learned from user feedback that apply to this run
 
     def models(self) -> list[str]:
         try:
@@ -48,7 +49,7 @@ class Ollama:
             user["images"] = images
         body = {
             "model": self.model, "stream": False,
-            "messages": [{"role": "system", "content": SYSTEM}, user],
+            "messages": [{"role": "system", "content": f"{SYSTEM}\n\n{self.lessons}" if self.lessons else SYSTEM}, user],
             "options": {"temperature": temperature, "num_ctx": 8192},
         }
         if as_json:

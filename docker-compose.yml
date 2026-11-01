@@ -28,6 +28,7 @@ x-shared-volumes: &volumes
   # Driver and executors must see the same paths: uploads, intermediate Parquet, input files.
   - ./data:/data
   - ./input:/input:ro
+  - ./memory:/memory                # learned skills (a git-tracked folder)
 
 services:
   autoeda:
@@ -37,6 +38,8 @@ services:
     ports: ["8000:8000"]
     environment:
       AUTOEDA_ENGINE: local                       # default in the UI; Spark selectable per job
+      AUTOEDA_ADMIN_PASSWORD: ${AUTOEDA_ADMIN_PASSWORD:-}   # first sign-in; unset = random, printed in the log
+      AUTOEDA_MEMORY_DIR: /memory
       AUTOEDA_MEMORY_LIMIT: 3GB                   # DuckDB working memory; spills to /data beyond
       AUTOEDA_THREADS: "4"
       OLLAMA_HOST: ${OLLAMA_HOST:-http://ollama:11434}

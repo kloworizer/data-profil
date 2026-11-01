@@ -15,6 +15,7 @@ from __future__ import annotations
 import datetime as dt
 import re
 import unicodedata
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Iterable
 
@@ -24,7 +25,10 @@ from .repair import PERIOD_RE, RowRepairer, learn_classes, looks_like_data, vcla
 from .structure import header_depth_guess
 
 HEAD_SCAN = 30
-TOTAL_RE = re.compile(r"^\s*(grand\s*-?\s*total|sub\s*-?\s*total|total(es|s)?|jumlah|sum|overall|totaal|gesamt)\b", re.I)
+HEADER_ROWS: ContextVar[int | None] = ContextVar("autoeda_header_rows", default=None)   # set from memory
+# 'Jumlah' alone is a total; 'Jumlah Penduduk' ('number of residents') is an ordinary indicator
+TOTAL_RE = re.compile(r"^\s*(grand\s*-?\s*total|sub\s*-?\s*total|total(es|s)?|sum|overall|totaal|gesamt)\b"
+                      r"|^\s*jumlah(\s+(total|keseluruhan|seluruhnya|semua|akhir))?\s*[:.]?\s*$", re.I)
 NOTE_RE = re.compile(r"^\s*(source|sumber|note|notes|nb|catatan|keterangan|remark|footnote|disclaimer|\*|†|‡|\(\d+\)|\d+\)|"
                      r"generated|printed|page\s+\d)", re.I)
 SECTION_RE = re.compile(r"(:\s*$|^(region|wilayah|area|kategori|category|group|kelompok|section|bagian|"
@@ -213,7 +217,15 @@ def grid_to_table(rows: Iterable[list], out: Path, name: str, log: RepairLog, so
     body_start = hdr + 1 if has_header else hdr
     # multi-row header (up to 3 levels): following rows are text while the rows after them are data
     levels = 1
-    while has_header and fixed_header is None and levels < 3 and body_start + 1 < len(head):
+    want = HEADER_ROWS.get()            # header depth learned from user feedback
+    if want and has_header and fixed_header is None:
+        while levels < want and body_start < len(head):
+            header_cells = _combine_level(header_cells, head[body_start], False)
+            body_start += 1
+            levels += 1
+        log.add("multirow_header_combined", hdr + 1, None, " ⎮ ".join(header_cells),
+                detail=f"{want} header rows (learned from feedback)")
+    while not want and has_header and fixed_header is None and levels < 3 and body_start + 1 < len(head):
         nxt = head[body_start]
         # first real data row after the candidate (skip blanks and one-cell section labels)
         after = next((r for r in head[body_start + 1:] if _nn(r) >= 2), None)
@@ -234,7 +246,7 @@ def grid_to_table(rows: Iterable[list], out: Path, name: str, log: RepairLog, so
         levels += 1
 
     # the rules could not tell whether the next row is one more header level: ask the local model
-    if has_header and fixed_header is None and advisor is not None and advisor.enabled and levels < 3:
+    if not want and has_header and fixed_header is None and advisor is not None and advisor.enabled and levels < 3:
         raw = [r for r in head[hdr:] if _nn(r)][:12]
         depth, unsure = header_depth_guess(raw, start=levels, limit=3)
         if unsure:

@@ -1,0 +1,220 @@
+{% extends "layout.html" %}
+{% block title %}Data Check · Files{% endblock %}
+{% block width %}is-max-widescreen{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1 class="title is-4">🗂 <span data-t="title"></span></h1><p class="sub" data-t="sub"></p></div>
+  <button class="button is-small" onclick="load()">↻&nbsp;<span data-t="refresh"></span></button>
+</div>
+
+<section class="box usage">
+  <div class="level is-mobile mb-3" style="flex-wrap:wrap;gap:12px">
+    <div class="level-item has-text-centered"><div><p class="heading" data-t="u_uploads"></p><p class="title is-5" id="u-up">–</p><p class="sub" id="u-upn"></p></div></div>
+    <div class="level-item has-text-centered"><div><p class="heading" data-t="u_reports"></p><p class="title is-5" id="u-rep">–</p><p class="sub" id="u-repn"></p></div></div>
+    <div class="level-item has-text-centered" id="u-orph-box" hidden><div><p class="heading" data-t="u_orphans"></p><p class="title is-5" id="u-orph">–</p><p class="sub" data-t="u_orphans_sub"></p></div></div>
+    <div class="level-item has-text-centered"><div><p class="heading" data-t="u_free"></p><p class="title is-5" id="u-free">–</p><p class="sub" id="u-total"></p></div></div>
+  </div>
+  <progress class="progress is-link mb-1" id="u-bar" value="0" max="100"></progress>
+  <p class="sub" id="u-bartext"></p>
+</section>
+
+<section class="box">
+  <div class="field is-grouped is-grouped-multiline">
+    <div class="control is-expanded"><input class="input" type="search" id="q" data-tp="search" oninput="render()"></div>
+    <div class="control"><div class="select"><select id="kind" onchange="render()">
+      <option value="" data-t="f_all"></option><option value="stored" data-t="f_stored"></option>
+      <option value="gone" data-t="f_gone"></option><option value="server" data-t="f_server"></option></select></div></div>
+    {% if user.role == 'admin' %}<div class="control"><div class="select"><select id="owner" onchange="render()"><option value="" data-t="f_everyone"></option></select></div></div>{% endif %}
+  </div>
+  <div class="table-container">
+  <table class="table is-fullwidth is-hoverable ftable">
+    <thead><tr>
+      <th class="nosort" style="width:32px"><input type="checkbox" id="all" onchange="selectAll(this.checked)" data-tt="sel_all"></th>
+      <th data-k="file" data-t="c_file"></th>
+      {% if user.role == 'admin' %}<th data-k="owner" data-t="c_owner"></th>{% endif %}
+      <th data-k="created" data-t="c_date"></th>
+      <th data-k="disk" class="num" data-t="c_size"></th>
+      <th data-k="report_bytes" class="num" data-t="c_report"></th>
+      <th data-k="state" data-t="c_state"></th>
+      <th class="nosort"></th>
+    </tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+  </div>
+  <p class="sub" id="empty" hidden data-t="empty"></p>
+</section>
+
+<div class="bulkbar" id="bulk" hidden>
+  <div class="notification is-link is-light is-flex is-align-items-center" style="gap:10px;flex-wrap:wrap">
+    <b id="bulk-n"></b>
+    <button class="button is-small" onclick="bulk('drop')">🗑&nbsp;<span data-t="drop_files"></span></button>
+    <button class="button is-small is-danger" onclick="bulk('delete')">✕&nbsp;<span data-t="del_all"></span></button>
+    <button class="button is-small is-text" onclick="selectAll(false)" data-t="cancel"></button>
+  </div>
+</div>
+
+<section class="box" id="orph" hidden>
+  <h2 class="title is-5" data-t="orph_title"></h2>
+  <p class="sub mb-3" data-t="orph_sub"></p>
+  <table class="table is-fullwidth ftable"><tbody id="orows"></tbody></table>
+</section>
+{% endblock %}
+{% block script %}
+<script>
+addT({
+  en: { title: 'Files', sub: 'Uploaded files and the reports made from them: see how much space they take, sort them and clean up.',
+    refresh: 'Refresh', u_uploads: 'Uploaded files', u_reports: 'Reports', u_orphans: 'Left-over uploads', u_orphans_sub: 'not linked to any report',
+    u_free: 'Free disk space', u_total: 'of {t}', u_files: '{n} file(s) kept', u_reps: '{n} report(s)',
+    u_bar: 'Disk of the data folder: {used} used of {total} ({pct}%). Your uploads and reports take {mine}.',
+    search: 'Search a file name…', f_all: 'All', f_stored: 'File kept (can run again)', f_gone: 'File deleted (report only)',
+    f_server: 'Server folder / cluster', f_everyone: 'Everyone',
+    c_file: 'File', c_owner: 'Owner', c_date: 'Uploaded', c_size: 'File size', c_report: 'Report size', c_state: 'Status',
+    s_stored: 'File kept', s_deleted: 'File deleted', s_server: 'On the server folder', s_remote: 'On the cluster', s_noreport: 'No report',
+    st_queued: 'Waiting', st_running: 'Working', st_done: 'Ready', st_failed: 'Problem', st_cancelling: 'Stopping', st_cancelled: 'Stopped',
+    open: 'Open report', get: 'Download file', drop: 'Delete file, keep report', del: 'Delete file and report',
+    sel_all: 'Select all', selected: '{n} selected', drop_files: 'Delete files, keep reports', del_all: 'Delete files and reports',
+    empty: 'No files yet. Upload one on the Analyze page.',
+    q_drop_t: 'Delete the uploaded file(s)?', q_drop: 'Frees {size}. The reports stay, but these analyses can no longer be run again.',
+    q_del_t: 'Delete file(s) and report(s)?', q_del: '{n} report(s) and their uploaded files are deleted from the server. This cannot be undone.',
+    q_orph_t: 'Delete this left-over upload?', q_orph: 'Frees {size}. No report uses it.',
+    done_drop: 'Files deleted. Reports kept.', done_del: 'Deleted.', busy: 'Still running: stop it first.',
+    orph_title: 'Left-over uploads', orph_sub: 'Upload folders no report refers to (for example after a crash during an upload). Safe to delete.',
+    yes_drop: 'Delete files', yes_del: 'Delete', by: 'by {u}', legacy: '(before sign-in)' },
+  id: { title: 'File', sub: 'File yang diunggah dan laporan yang dibuat darinya: lihat ruang yang dipakai, urutkan, dan bersihkan.',
+    refresh: 'Muat ulang', u_uploads: 'File unggahan', u_reports: 'Laporan', u_orphans: 'Sisa unggahan', u_orphans_sub: 'tidak terkait laporan mana pun',
+    u_free: 'Ruang disk kosong', u_total: 'dari {t}', u_files: '{n} file disimpan', u_reps: '{n} laporan',
+    u_bar: 'Disk folder data: {used} terpakai dari {total} ({pct}%). Unggahan dan laporan Anda memakai {mine}.',
+    search: 'Cari nama file…', f_all: 'Semua', f_stored: 'File disimpan (bisa dijalankan lagi)', f_gone: 'File dihapus (hanya laporan)',
+    f_server: 'Folder server / klaster', f_everyone: 'Semua orang',
+    c_file: 'File', c_owner: 'Pemilik', c_date: 'Diunggah', c_size: 'Ukuran file', c_report: 'Ukuran laporan', c_state: 'Status',
+    s_stored: 'File disimpan', s_deleted: 'File dihapus', s_server: 'Di folder server', s_remote: 'Di klaster', s_noreport: 'Tanpa laporan',
+    st_queued: 'Menunggu', st_running: 'Diproses', st_done: 'Siap', st_failed: 'Bermasalah', st_cancelling: 'Menghentikan', st_cancelled: 'Dihentikan',
+    open: 'Buka laporan', get: 'Unduh file', drop: 'Hapus file, simpan laporan', del: 'Hapus file dan laporan',
+    sel_all: 'Pilih semua', selected: '{n} dipilih', drop_files: 'Hapus file, simpan laporan', del_all: 'Hapus file dan laporan',
+    empty: 'Belum ada file. Unggah di halaman Analisis.',
+    q_drop_t: 'Hapus file unggahan?', q_drop: 'Membebaskan {size}. Laporan tetap ada, tetapi analisis ini tidak bisa dijalankan lagi.',
+    q_del_t: 'Hapus file dan laporan?', q_del: '{n} laporan beserta file unggahannya dihapus dari server. Tidak bisa dibatalkan.',
+    q_orph_t: 'Hapus sisa unggahan ini?', q_orph: 'Membebaskan {size}. Tidak dipakai laporan mana pun.',
+    done_drop: 'File dihapus. Laporan disimpan.', done_del: 'Dihapus.', busy: 'Masih berjalan: hentikan dulu.',
+    orph_title: 'Sisa unggahan', orph_sub: 'Folder unggahan yang tidak dirujuk laporan mana pun (mis. setelah unggahan gagal). Aman dihapus.',
+    yes_drop: 'Hapus file', yes_del: 'Hapus', by: 'oleh {u}', legacy: '(sebelum login)' }
+});
+var DATA = { files: [], orphans: [] }, SORT = { k: 'created', dir: 'desc' }, SEL = {};
+
+function state(f) { return f.stored ? 'stored' : f.kind === 'server' ? 'server' : f.kind === 'remote' ? 'remote' : 'deleted'; }
+function sizeOf(f) { return f.stored ? f.disk : 0; }
+function load() {
+  return fetch('/api/files').then(function (r) { return r.json(); }).then(function (j) {
+    DATA = j; DATA.orphans = j.orphans || [];
+    var ids = {}; j.files.forEach(function (f) { ids[f.id] = 1; });
+    for (var k in SEL) if (!ids[k]) delete SEL[k];
+    var sel = $('owner');
+    if (sel) {
+      var cur = sel.value, owners = {};
+      j.files.forEach(function (f) { owners[f.owner || ''] = 1; });
+      sel.innerHTML = '<option value="">' + esc(t('f_everyone')) + '</option>' + Object.keys(owners).sort().map(function (o) {
+        return '<option value="' + esc(o || '-') + '">' + esc(o || t('legacy')) + '</option>'; }).join('');
+      sel.value = cur;
+    }
+    render();
+  });
+}
+function usage() {
+  var u = DATA.usage || {}, d = DATA.disk;
+  $('u-up').textContent = bytes(u.uploads || 0); $('u-upn').textContent = t('u_files', { n: u.stored || 0 });
+  $('u-rep').textContent = bytes(u.reports || 0); $('u-repn').textContent = t('u_reps', { n: DATA.files.filter(function (f) { return f.has_report; }).length });
+  $('u-orph-box').hidden = !DATA.admin; if (DATA.admin) $('u-orph').textContent = bytes(u.orphans || 0);
+  if (d) {
+    var pct = Math.round(100 * d.used / d.total);
+    $('u-free').textContent = bytes(d.free); $('u-total').textContent = t('u_total', { t: bytes(d.total) });
+    $('u-bar').value = pct; $('u-bar').className = 'progress mb-1 ' + (pct > 90 ? 'is-danger' : pct > 75 ? 'is-warning' : 'is-link');
+    $('u-bartext').textContent = t('u_bar', { used: bytes(d.used), total: bytes(d.total), pct: pct, mine: bytes((u.uploads || 0) + (u.reports || 0)) });
+  }
+}
+function rows() {
+  var q = $('q').value.toLowerCase(), kind = $('kind').value, own = $('owner') ? $('owner').value : '';
+  var list = DATA.files.filter(function (f) {
+    if (q && (f.file || '').toLowerCase().indexOf(q) < 0) return false;
+    if (own && (f.owner || '-') !== own) return false;
+    var s = state(f);
+    return !kind || (kind === 'stored' ? s === 'stored' : kind === 'gone' ? s === 'deleted' : s === 'server' || s === 'remote');
+  });
+  var k = SORT.k, dir = SORT.dir === 'asc' ? 1 : -1;
+  list.sort(function (a, b) {
+    var x = k === 'disk' ? sizeOf(a) : k === 'state' ? state(a) : a[k], y = k === 'disk' ? sizeOf(b) : k === 'state' ? state(b) : b[k];
+    if (typeof x === 'string' || typeof y === 'string') return dir * String(x || '').localeCompare(String(y || ''), loc());
+    return dir * ((x || 0) - (y || 0));
+  });
+  return list;
+}
+var CHIP = { done: 'is-success', failed: 'is-danger', running: 'is-link', queued: 'is-link' };
+function render() {
+  usage();
+  document.querySelectorAll('.ftable th[data-k]').forEach(function (th) { if (th.dataset.k === SORT.k) th.dataset.dir = SORT.dir; else delete th.dataset.dir; });
+  var list = rows();
+  $('empty').hidden = !!DATA.files.length;
+  $('rows').innerHTML = list.map(function (f) {
+    var id = "'" + f.id + "'", s = state(f);
+    var stTag = { stored: 'is-success is-light', deleted: 'is-plain', server: 'is-info is-light', remote: 'is-info is-light' }[s];
+    var acts = (f.has_report ? '<a class="button is-small is-link is-light" href="/reports/' + f.id + '" target="_blank" title="' + esc(t('open')) + '">📖</a>' : '') +
+      (f.stored ? '<a class="button is-small" href="/api/jobs/' + f.id + '/file" title="' + esc(t('get')) + '">⬇</a>' : '') +
+      (f.stored && !f.active ? '<button class="button is-small" onclick="dropOne(' + id + ')" title="' + esc(t('drop')) + '">🗑</button>' : '') +
+      (!f.active ? '<button class="button is-small is-danger is-light" onclick="delOne(' + id + ')" title="' + esc(t('del')) + '">✕</button>' : '');
+    return '<tr><td><input type="checkbox" ' + (SEL[f.id] ? 'checked ' : '') + (f.active ? 'disabled ' : '') + 'onchange="pick(' + id + ', this.checked)"></td>' +
+      '<td><span class="fname">' + esc(f.file) + '</span></td>' +
+      (DATA.admin ? '<td class="sub nowrap">' + esc(f.owner || t('legacy')) + '</td>' : '') +
+      '<td class="sub" style="white-space:nowrap">' + esc(when(f.created)) + '</td>' +
+      '<td class="num">' + (f.stored ? esc(bytes(f.disk)) : '<span class="sub">' + (f.size ? '<s>' + esc(bytes(f.size)) + '</s>' : '–') + '</span>') + '</td>' +
+      '<td class="num">' + (f.report_bytes ? esc(bytes(f.report_bytes)) : '–') + '</td>' +
+      '<td><div class="tags mb-0"><span class="tag ' + stTag + '">' + esc(t('s_' + s)) + '</span>' +
+        (f.status !== 'done' ? '<span class="tag ' + (CHIP[f.status] ? CHIP[f.status] + ' is-light' : 'is-plain') + '">' + esc(t('st_' + f.status)) + '</span>' : '') + '</div></td>' +
+      '<td><div class="buttons are-small is-right mb-0" style="flex-wrap:nowrap">' + acts + '</div></td></tr>';
+  }).join('');
+  var n = Object.keys(SEL).length;
+  $('bulk').hidden = !n; $('bulk-n').textContent = t('selected', { n: n });
+  $('all').checked = n > 0 && list.filter(function (f) { return !f.active; }).every(function (f) { return SEL[f.id]; });
+  $('orph').hidden = !DATA.orphans.length;
+  $('orows').innerHTML = DATA.orphans.map(function (o) {
+    return '<tr><td><span class="fname">' + esc(o.file) + '</span><div class="sub"><code>' + esc(o.id) + '</code></div></td><td class="sub">' + esc(when(o.modified)) +
+      '</td><td class="num">' + esc(bytes(o.size)) + '</td><td><button class="button is-small is-danger is-light" onclick="delOrphan(\'' + o.id + '\', ' + o.size + ')">✕</button></td></tr>';
+  }).join('');
+}
+document.querySelectorAll('.ftable th[data-k]').forEach(function (th) {
+  th.onclick = function () { SORT = { k: th.dataset.k, dir: SORT.k === th.dataset.k && SORT.dir === 'asc' ? 'desc' : 'asc' }; render(); };
+});
+function pick(id, on) { if (on) SEL[id] = 1; else delete SEL[id]; render(); }
+function selectAll(on) { SEL = {}; if (on) rows().forEach(function (f) { if (!f.active) SEL[f.id] = 1; }); render(); }
+function byId(id) { return DATA.files.filter(function (f) { return f.id === id; })[0]; }
+function run(ids, action) {
+  return Promise.all(ids.map(function (id) {
+    return fetch('/api/jobs/' + id + (action === 'delete' ? '' : '/drop-file'), { method: action === 'delete' ? 'DELETE' : 'POST' }).then(function (r) { return r.ok; });
+  })).then(function (oks) {
+    var bad = oks.filter(function (x) { return !x; }).length;
+    toast(bad ? t('err_action') : t(action === 'delete' ? 'done_del' : 'done_drop'), bad ? 'bad' : 'good');
+    SEL = {}; return load();
+  });
+}
+function dropIds(ids) {
+  ids = ids.filter(function (id) { var f = byId(id); return f && f.stored; });
+  if (!ids.length) return;
+  var size = ids.reduce(function (s, id) { return s + byId(id).disk; }, 0);
+  ask(t('q_drop_t'), t('q_drop', { size: bytes(size) }), t('yes_drop'), true).then(function (ok) { if (ok) run(ids, 'drop'); });
+}
+function delIds(ids) {
+  if (!ids.length) return;
+  ask(t('q_del_t'), t('q_del', { n: ids.length }), t('yes_del'), true).then(function (ok) { if (ok) run(ids, 'delete'); });
+}
+function dropOne(id) { dropIds([id]); }
+function delOne(id) { delIds([id]); }
+function bulk(action) { var ids = Object.keys(SEL); if (action === 'drop') dropIds(ids); else delIds(ids); }
+function delOrphan(id, size) {
+  ask(t('q_orph_t'), t('q_orph', { size: bytes(size) }), t('yes_del'), true).then(function (ok) {
+    if (ok) fetch('/api/files/orphans/' + id, { method: 'DELETE' }).then(function (r) { toast(r.ok ? t('done_del') : t('err_action'), r.ok ? 'good' : 'bad'); load(); });
+  });
+}
+function onLang() { document.title = t('app_title') + ' · ' + t('title'); render(); }
+boot();
+load();
+setInterval(function () { if (!dlgDone && !Object.keys(SEL).length) load(); }, 10000);
+</script>
+{% endblock %}

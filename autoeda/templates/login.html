@@ -1,0 +1,44 @@
+{% extends "layout.html" %}
+{% block title %}Data Check · Sign in{% endblock %}
+{% block body %}
+<div class="login-wrap">
+  <form class="box" id="form" autocomplete="on">
+    <div class="is-flex is-justify-content-space-between is-align-items-center mb-4">
+      <h1 class="title is-4 mb-0">📊 <span data-t="app_title"></span></h1>
+      <div class="buttons has-addons mb-0"><button type="button" class="button is-small" data-setlang="en">EN</button><button type="button" class="button is-small" data-setlang="id">ID</button></div>
+    </div>
+    <p class="sub mb-4" data-t="intro"></p>
+    <div class="field"><label class="label" for="u" data-t="user"></label>
+      <div class="control"><input class="input" id="u" name="username" autocomplete="username" required autofocus></div></div>
+    <div class="field"><label class="label" for="p" data-t="password"></label>
+      <div class="control"><input class="input" id="p" name="password" type="password" autocomplete="current-password" required></div></div>
+    <p class="help is-danger mb-3" id="err" hidden></p>
+    <button class="button is-link is-fullwidth" id="go" type="submit" data-t="signin"></button>
+    <p class="sub mt-4" data-t="forgot"></p>
+  </form>
+</div>
+{% endblock %}
+{% block script %}
+<script>
+addT({
+  en: { intro: 'Sign in to analyse files and read your reports.', user: 'User name', password: 'Password', signin: 'Sign in',
+    wrong: 'Wrong user name or password.', forgot: 'Forgot your password? Ask an administrator to set a new one.' },
+  id: { intro: 'Masuk untuk menganalisis file dan membaca laporan Anda.', user: 'Nama pengguna', password: 'Kata sandi', signin: 'Masuk',
+    wrong: 'Nama pengguna atau kata sandi salah.', forgot: 'Lupa kata sandi? Minta administrator membuat yang baru.' }
+});
+boot();
+$('form').onsubmit = function (e) {
+  e.preventDefault();
+  var go = $('go'); go.classList.add('is-loading'); $('err').hidden = true;
+  var next = new URLSearchParams(location.search).get('next') || '/';
+  fetch('/login?next=' + encodeURIComponent(next), { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: $('u').value, password: $('p').value }) })
+    .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw { status: r.status, j: j }; return j; }); })
+    .then(function (j) { location.href = j.next || '/'; })
+    .catch(function (e) {
+      go.classList.remove('is-loading');
+      $('err').textContent = e && e.status === 429 ? e.j.detail : t('wrong'); $('err').hidden = false; $('p').select();
+    });
+};
+</script>
+{% endblock %}

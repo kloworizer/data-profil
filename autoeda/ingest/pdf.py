@@ -22,6 +22,7 @@
 """
 from __future__ import annotations
 
+import math
 import os
 import re
 from collections import Counter
@@ -30,14 +31,16 @@ from pathlib import Path
 from .. import cancel, config
 from ..models import RepairLog
 from .delimited import ingest_delimited
-from .grid import cell_str, grid_to_table, norm_text
+from .grid import HEADER_ROWS, cell_str, grid_to_table, norm_text
 from .repair import learn_classes, vclass
 from .structure import StructureAI, combine_header, header_depth_guess, label_only, nn, row_sim, texty
 
-TEXT_SETTINGS = {"vertical_strategy": "text", "horizontal_strategy": "text", "snap_tolerance": 3,
-                 "join_tolerance": 3, "min_words_vertical": 3, "min_words_horizontal": 1}
-PAGE_NO_RE = re.compile(r"^\s*[-–]?\s*(page|hal(aman)?|halaman|p\.|pg\.?|seite)?\s*\d+\s*((of|dari|von|/)\s*\d+)?\s*[-–]?\s*$", re.I)
-HEADER_MATCH = 0.85      # row similarity above which a row is the repeated header
+PAGE_NO_RE = re.compile(r"^\s*[-–]?\s*(page|hal(aman)?\.?|p\.|pg\.?|seite|p[áa]gina|p[áa]g\.?)?\s*\d+\s*"
+                        r"((of|dari|de|von|/)\s*\d+)?\s*[-–]?\s*$", re.I)
+LETTERSPACED_RE = re.compile(r"(?:[\d/.,:-]{1,2} ){3,}[\d/.,:-]{1,2}")
+NUMBER_CELL_RE =re.compile(r"^[-+–(]?\s?[$€£¥₹]?\s?\d[\d.,:/%\s'-]*[%)]?$")
+CONTINUED_RE =re.compile(r"\b(lanjutan|sambungan|continued|cont\.|fortsetzung)\b", re.I)
+HEADER_MATCH = 0.85     # row similarity above which a row is the repeated header
 HEADER_MAYBE = 0.5       # between the two: ask the AI
 MAX_HEADER_ROWS = 4
 LOOK = MAX_HEADER_ROWS + 2
@@ -46,7 +49,14 @@ EPS = 0.5
 
 # --- one page table ---------------------------------------------------------------------
 def _clean(v) -> str:
-    return norm_text(cell_str(v)).replace("\n", " ").strip()
+    s = norm_text(cell_str(v)).replace("\n", " ").strip()
+    # letter-spaced digits ('0 3 / 2 5 / 2 0 16'): close the gaps when only digits and
+    # separators remain
+    if len(s) >= 7 and LETTERSPACED_RE.fullmatch(s):
+        toks = s.split()
+        if sum(len(t) == 1 for t in toks) >= 0.75 * len(toks) and any(t in "/.:-" for t in toks):
+            s = s.replace(" ", "")
+    return s
 
 
 class PageTable:
@@ -65,6 +75,8 @@ class PageTable:
         self.labels: set[int] = set()  # rows holding one cell merged across the row
         self.names: list[str] | None = None    # column names read by the vision model
         self.vlines: list[float] | None = None  # column boundaries found with the vision model
+        self.top: float | None = None          # y of the table's top edge (None = unknown)
+        self.bottom: float | None = None
 
     @property
     def width(self) -> int:
@@ -91,7 +103,7 @@ class PageTable:
             elif r < band:
                 out.append(self.text(*o))                 # header: group label over each of its columns
             elif o[0] == r:
-                out.append("" if r in self.labels else self.text(*o))   # horizontal span in the body
+                out.append("")          # horizontal span in the body: one value, kept in its first column
             elif o[0] < band:
                 out.append("")                            # header cell reaching into the body
             else:
@@ -136,10 +148,201 @@ def _page_tables(page, pi: int, settings=None) -> list[PageTable]:
         else:   # geometry does not line up with the text grid: no span information
             x0, x1 = tb.bbox[0], tb.bbox[2]
             cols = [(x0 + (x1 - x0) * i / w, x0 + (x1 - x0) * (i + 1) / w) for i in range(w)]
+        grid, origin = _split_stacked(grid, origin)
         pt = PageTable(pi, grid, origin, cols, settings is None, "lines" if settings is None else "text")
+        pt.top, pt.bottom = tb.bbox[1], tb.bbox[3]
         _mark_labels(pt)
         out.append(pt)
     return out
+
+
+def _not_watermark(obj) -> bool:
+    """False for characters set at a slant (watermarks such as a site URL across the
+    page); upright and vertical (90°) text is kept."""
+    if obj.get("object_type") != "char" or "matrix" not in obj:
+        return True
+    a, b = obj["matrix"][0], obj["matrix"][1]
+    angle = abs(math.degrees(math.atan2(b, a))) % 90
+    return angle < 5 or angle > 85
+
+
+def _split_stacked(grid: list[list], origin: dict) -> tuple[list[list], dict]:
+    """A table ruled between columns but not between rows puts several records into one
+    cell, one per text line. A row whose filled cells all hold the same number of lines
+    (and some of them numbers) is split into that many rows. Rows touched by a merged
+    cell are left alone."""
+    spanned = {r for (r, _), (r0, _) in origin.items()} | {r0 for (r0, _) in origin.values()}
+    out, moved, shift = [], {}, 0
+    for r, row in enumerate(grid):
+        cells = [str(v).split("\n") for v in row if v]
+        k = len(cells[0]) if cells else 0
+        if r == 0 or r in spanned or None in row or k < 2 or len(cells) < 2 \
+                or any(len(c) != k for c in cells) \
+                or not any(all(NUMBER_CELL_RE.match(x.strip()) for x in c) for c in cells):
+            moved[r] = r + shift
+            out.append(row)
+            continue
+        for i in range(k):
+            out.append([str(v).split("\n")[i] if v else v for v in row])
+        moved[r] = r + shift
+        shift += k - 1
+    if not shift:
+        return grid, origin
+    return out, {(moved[r], c): (moved[r0], c0) for (r, c), (r0, c0) in origin.items()}
+
+
+def _segments(line: list[dict], gap: float = 0.75) -> list[list[dict]]:
+    """Split a text line into phrases at gaps wider than `gap` line heights."""
+    h = sorted(w["bottom"] - w["top"] for w in line)[len(line) // 2]
+    segs = [[line[0]]]
+    for w in line[1:]:
+        if w["x0"] - segs[-1][-1]["x1"] > max(2.0, gap * h):
+            segs.append([w])
+        else:
+            segs[-1].append(w)
+    return segs
+
+
+def _row_like(segs: list[list[dict]]) -> bool:
+    """A line that reads as a table row: several short phrases, or a label and numbers
+    (prose gives one or two long phrases per line)."""
+    if len(segs) < 2:
+        return False
+    texts = [" ".join(w["text"] for w in s) for s in segs]
+    numeric = sum(1 for t in texts if re.search(r"\d", t) and len(t) <= 20)
+    return (len(segs) >= 3 or numeric >= 1) and sum(len(t) for t in texts) / len(texts) <= 30
+
+
+def _gutters(lines: list[list[dict]], x0: float, x1: float) -> list[float]:
+    """Column boundaries: x-ranges that no phrase of the block's rows covers (a phrase,
+    not a word: 'Item 0' on every row must not open a gutter after 'Item')."""
+    step = 1.0
+    n = int((x1 - x0) / step) + 1
+    cover = [0] * n
+    for line in lines:
+        for seg in _segments(line, 0.45):          # words one plain space apart stay together
+            for i in range(int((seg[0]["x0"] - x0) / step), min(n, int((seg[-1]["x1"] - x0) / step) + 1)):
+                cover[i] += 1
+    limit = max(1, int(0.03 * len(lines)))      # a value glued to its neighbour may cross a gutter
+    out, i = [], 0
+    while i < n:
+        if cover[i] <= limit:
+            j = i
+            while j < n and cover[j] <= limit:
+                j += 1
+            if j - i >= 2 and i > 0 and j < n:          # inner gutters only, at least 2pt wide
+                out.append(x0 + (i + j) / 2 * step)
+            i = j
+        else:
+            i += 1
+    # a gutter crossed by a few lines only stands when the columns on both sides hold values
+    # on many lines (not just the overflow of one long cell)
+    while True:
+        edges = [x0 - 1, *out, x1 + 1]
+        used = [sum(1 for l in lines if any(edges[k] <= (w["x0"] + w["x1"]) / 2 < edges[k + 1] for w in l))
+                for k in range(len(edges) - 1)]
+        weak = [k for k in range(len(out)) if min(used[k], used[k + 1]) < 0.2 * len(lines)
+                and any(cover[int((out[k] - x0) / step) + d] for d in (-1, 0, 1)
+                        if 0 <= int((out[k] - x0) / step) + d < n)]
+        if not weak:
+            return out
+        out.pop(weak[0])
+
+
+def _stream_tables(page, pi: int) -> list[PageTable]:
+    """Borderless tables from text alignment: runs of row-like lines, cut into columns
+    at the whitespace gutters shared by all their lines, so no word is ever split."""
+    words = page.extract_words(x_tolerance=1.5)
+    if len(words) < 6:
+        return []
+    lines = _lines_of(words)
+    segs = [_segments(l) for l in lines]
+    # page furniture: a line that is only a page number, or names a page ('Página 12 de 14')
+    furniture = [any(PAGE_NO_RE.match(t) and (len(ss) == 1 or re.search(r"[^\W\d_]", t))
+                     for t in (" ".join(w["text"] for w in s) for s in ss)) for ss in segs]
+    flags = [_row_like(ss) and not f for ss, f in zip(segs, furniture)]
+    blocks, i = [], 0
+    while i < len(lines):
+        if not flags[i]:
+            i += 1
+            continue
+        j = i
+        while j + 1 < len(lines):           # one non-row line inside (a wrapped cell, a section label) is kept
+            if flags[j + 1]:
+                j += 1
+            elif j + 2 < len(lines) and flags[j + 2] and not furniture[j + 1] \
+                    and _close(lines[j], lines[j + 1], 1.6) and _close(lines[j + 1], lines[j + 2], 2.6):
+                j += 2
+            else:
+                break
+        if sum(flags[i:j + 1]) >= 3:
+            blocks.append((i, j))
+        i = j + 1
+    out = []
+    for i, j in blocks:
+        body = [l for l, f in zip(lines[i:j + 1], flags[i:j + 1]) if f]
+        # header lines directly above: short phrases, no big vertical gap
+        top = i
+        while top > 0 and i - top < MAX_HEADER_ROWS and _close(lines[top - 1], lines[top], 1.8) \
+                and not furniture[top - 1] and all(len(" ".join(w["text"] for w in s)) <= 40 for s in segs[top - 1]):
+            top -= 1
+        x0 = min(w["x0"] for l in body for w in l)
+        x1 = max(w["x1"] for l in body for w in l)
+        cuts = _gutters(body, x0, x1)
+        if not cuts:
+            continue
+        edges = [min(x0, min(w["x0"] for l in lines[top:j + 1] for w in l)) - 1, *cuts,
+                 max(x1, max(w["x1"] for l in lines[top:j + 1] for w in l)) + 1]
+        grid = []
+        for li in range(top, j + 1):
+            row = [""] * (len(edges) - 1)
+            # body lines word by word (a narrow gutter may hide inside a phrase); header lines
+            # phrase by phrase (a heading may reach over a gutter of the body)
+            units = [[w] for w in lines[li]] if li >= i else segs[li]
+            for u in units:
+                mid = (u[0]["x0"] + u[-1]["x1"]) / 2
+                c = next((k for k in range(len(edges) - 1) if mid < edges[k + 1]), len(edges) - 2)
+                row[c] = f"{row[c]} {' '.join(w['text'] for w in u)}".strip()
+            grid.append(row)
+        cols = [(edges[k], edges[k + 1]) for k in range(len(edges) - 1)]
+        pt = PageTable(pi, grid, {}, cols, False, "text")
+        pt.top, pt.bottom = lines[top][0]["top"], lines[j][0]["bottom"]
+        out.append(pt)
+    return out
+
+
+def _better_than_rules(found: list[PageTable], page, pi: int, log: RepairLog) -> list[PageTable]:
+    """Ruling lines that are not cell borders (row shading, a frame round a borderless
+    table) give a table with too few columns. When the text alignment over the same area
+    shows clearly more columns and reads at least as well, it replaces that table."""
+    alt = [t for t in (_trim(t, log) for t in _stream_tables(page, pi)) if t
+           and _looks_tabular([t.row(r, 0) for r in range(len(t.grid))])]
+    def same_stretch(pt, st):
+        if pt.top is None or st.top is None:
+            return False
+        common = min(pt.bottom, st.bottom) - max(pt.top, st.top)
+        return common >= 0.5 * (pt.bottom - pt.top) and common >= 0.5 * (st.bottom - st.top)
+
+    # where the alignment reading spans several ruled tables, the rules do hold structure
+    alt = [st for st in alt if sum(1 for pt in found if same_stretch(pt, st)) == 1]
+    out = []
+    for pt in found:
+        best = None
+        for st in alt:
+            if not same_stretch(pt, st):
+                continue
+            if st.width >= pt.width + 2 and _score([st]) >= _score([pt]) - 0.02:
+                best = st if best is None or st.width > best.width else best
+        if best is not None:
+            log.note("Page {p}: the table's lines do not separate its columns; read from text alignment.", p=pi + 1)
+        out.append(best or pt)
+    return out
+
+
+def _close(a: list[dict], b: list[dict], factor: float) -> bool:
+    """Line b follows line a within `factor` line heights."""
+    h = max(w["bottom"] - w["top"] for w in a)
+    return b[0]["top"] - a[0]["bottom"] <= factor * h
 
 
 def _docling_tables(path: Path, pi: int) -> list[PageTable]:
@@ -388,17 +591,101 @@ def _looks_tabular(rows: list[list[str]]) -> bool:
     if len(filled) < 0.4 * len(cells):
         return False
     avg_len = sum(len(c) for c in filled) / len(filled)
-    numeric = sum(1 for c in filled if re.search(r"\d", c)) / len(filled)
-    return avg_len < 40 and numeric >= 0.15
+    numbers = sum(1 for c in filled if NUMBER_CELL_RE.match(c)) / len(filled)
+    words = [len(c.split()) for c in filled]
+    long = sum(1 for n in words if n >= 5) / len(filled)        # sentence fragments
+    lower = sum(1 for c in filled if c[0].islower()) / len(filled)   # a sentence carried on mid-line
+    return avg_len < 40 and long <= 0.3 and lower < 0.3         and (numbers >= 0.1 or sum(words) / len(words) <= 2.5)
+
+
+def _column_numbers(row: list[str]) -> bool:
+    """The numbering row some statistical tables print under the header: (1) (2) (3)..."""
+    vals = [v for v in row if v]
+    nums = [re.fullmatch(r"\(?(\d{1,2})\)?(?:\s*=.*)?", v) for v in vals]     # '2= (3 to 6)+14' too
+    if len(vals) < 2 or not all(nums):
+        return False
+    n = [int(m.group(1)) for m in nums]
+    return n == sorted(n) and len(set(n)) == len(n)
+
+
+def _tabular_text(t) -> bool:
+    """A table parsed from the PDF text layer that holds rows and columns, not prose
+    cut at spaces."""
+    import pyarrow.parquet as pq
+
+    if len(t.columns) < 2:
+        return False
+    cols = [c for c in t.columns if c not in t.drop_columns]
+    data = pq.read_table(t.path, columns=cols).slice(0, 200).to_pylist()
+    rows = [list(t.columns)] + [[cell_str(r[c]) for c in cols] for r in data]
+    filled = [v for r in rows for v in r if v]
+    # running text cut at spaces: cells are single ordinary words
+    words = sum(1 for v in filled if re.fullmatch(r"[a-zà-ÿ][\w'’-]*[.,;:]?", v)) / max(1, len(filled))
+    numbers = sum(1 for v in filled if NUMBER_CELL_RE.match(v)) / max(1, len(filled))
+    return _looks_tabular(rows) and words < 0.2 and numbers >= 0.1
 
 
 def _ocr_page(page) -> str:
     import pytesseract
     img = page.to_image(resolution=300).original
-    return pytesseract.image_to_string(img, lang=os.getenv("AUTOEDA_OCR_LANG", "eng"))
+    return pytesseract.image_to_string(img, lang=config.OCR_LANG)
 
 
 # --- stitching across pages ------------------------------------------------------------
+def _lines_above(page, top: float | None) -> list[str] | None:
+    """Text lines printed above a table on its page, top to bottom (page numbers left
+    out). None when the table position is unknown."""
+    if top is None:
+        return None
+    words = [w for w in page.extract_words() if w["bottom"] <= top + 1]
+    out = []
+    for line in _lines_of(words):
+        s = norm_text(" ".join(w["text"] for w in line)).strip()
+        if s and not PAGE_NO_RE.match(s):
+            out.append(s)
+    return out
+
+
+def _caption(above: list[str] | None, prev_above: list[str] | None) -> str | None:
+    """A title above the table that the previous page did not print as well (a running
+    header would be on both, digits aside): the page starts a new table.
+    '(continued)' notes don't count."""
+    if not above:
+        return None
+    seen = {re.sub(r"\d+", "#", l) for l in prev_above or []}
+    new = [l for l in above if re.sub(r"\d+", "#", l) not in seen]
+    if not new or any(CONTINUED_RE.search(l) for l in new):
+        return None
+    return " / ".join(new)
+
+
+def _side_by_side(a: PageTable, b: PageTable) -> bool:
+    """b carries on a wide table to the right: same number of rows, the same row labels
+    in its first column, but other column headings (statistical yearbooks print a wide
+    table over two pages this way)."""
+    if len(a.grid) != len(b.grid) or len(a.grid) < 4:
+        return False
+    keys = [(a.text(r, 0), b.text(r, 0)) for r in range(len(a.grid))]
+    filled = [k for k in keys if k[0] or k[1]]
+    same = sum(1 for x, y in filled if x == y)
+    head_a = [a.text(0, c) for c in range(1, a.width)]
+    head_b = [b.text(0, c) for c in range(1, b.width)]
+    return len(filled) >= 4 and same >= 0.9 * len(filled) and row_sim(head_a, head_b) < HEADER_MAYBE
+
+
+def _join_columns(a: PageTable, b: PageTable):
+    """Append b's columns (all but its row-label column) to a, in place."""
+    w = a.width
+    a.grid = [ra + rb[1:] for ra, rb in zip(a.grid, b.grid)]
+    for (r, c), (r0, c0) in b.origin.items():
+        if c >= 1 and c0 >= 1:
+            a.origin[(r, c - 1 + w)] = (r0, c0 - 1 + w)
+    shift = a.cols[-1][1] - b.cols[1][0] + 1
+    a.cols = a.cols + [(x0 + shift, x1 + shift) for x0, x1 in b.cols[1:]]
+    a.band_hint = max(a.band_hint, b.band_hint)
+    _mark_labels(a)
+
+
 def _align(ref: list[tuple[float, float]], cols: list[tuple[float, float]]) -> list[int] | None:
     """Map each column of a page table onto the reference columns by x-overlap.
     None when the tables do not line up (a different table)."""
@@ -487,6 +774,9 @@ def _header_band(g: Group, ai: StructureAI, log: RepairLog) -> int:
     page; otherwise from value types, with the local model settling unclear cases.
     0 = no header found (grid_to_table then looks for one itself)."""
     first = g.first
+    want = HEADER_ROWS.get()             # header depth learned from user feedback
+    if want:
+        return min(want, len(first.grid) - 1)
     known = max(first.band_hint, g.repeat_depth)
     if known:
         return min(known, MAX_HEADER_ROWS, len(first.grid) - 1)
@@ -507,6 +797,7 @@ def _group_to_table(g: Group, gi: int, ai: StructureAI, log: RepairLog, work_dir
     band = _header_band(g, ai, log)
     first = g.first
     head = [first.row(r, band) for r in range(band)]
+    head = [h for h in head if not _column_numbers(h)] or head      # '(1) (2) (3)' is no heading
     body: list[list[str]] = []
     labels: set[int] = set()
     for pt, mapping, skip in g.parts:
@@ -524,6 +815,9 @@ def _group_to_table(g: Group, gi: int, ai: StructureAI, log: RepairLog, work_dir
             continue
         if head and nn(row) >= 2 and any(row_sim(row, h) >= 0.9 for h in head):
             stats["repeated_header"] += 1
+            continue
+        if not kept and _column_numbers(row):
+            stats["repeated_header"] += 1      # '(1) (2) (3)' printed under the header
             continue
         if i in labels:
             kept_labels.add(len(kept))
@@ -571,17 +865,23 @@ def ingest_pdf(path: Path, work_dir: Path, name: str, progress=lambda p, m: None
     engine = config.PDF_ENGINE if use_model else "plumber"
     model_pages = 0
     reader_used = Counter()
+    prev_above: list[str] | None = None
     try:
         pdf = pdfplumber.open(str(path))
     except Exception as e:
-        if "password" in str(e).lower() or "encrypt" in type(e).__name__.lower() or "Password" in type(e).__name__:
+        why = f"{type(e).__name__} {e!r}".lower()     # pdfplumber wraps pdfminer's PDFPasswordIncorrect
+        if "password" in why or "encrypt" in why:
             raise ValueError("PDF is password-protected; remove the password and retry.")
         raise ValueError(f"Could not open PDF ({type(e).__name__}: {str(e)[:200]}).")
     with pdf:
         n_pages = len(pdf.pages)
-        for pi, page in enumerate(pdf.pages):
+        for pi, raw in enumerate(pdf.pages):
             progress(0.05 + 0.4 * pi / max(1, n_pages), f"Reading PDF page {pi + 1}/{n_pages}")
+            # 'bold' printed as the same glyph twice, slightly offset; diagonal watermark text
+            page = raw.dedupe_chars().filter(_not_watermark)
             found = [] if engine == "docling" else [t for t in (_trim(t, slog) for t in _page_tables(page, pi)) if t]
+            if found:
+                found = _better_than_rules(found, page, pi, slog)
             last = groups[-1] if groups else None
             running = last.first.vlines if last and last.last_page == pi - 1 else None
             if not found and running:
@@ -591,7 +891,7 @@ def ingest_pdf(path: Path, work_dir: Path, name: str, progress=lambda p, m: None
                     reader_used["vision"] += 1
             if not found:
                 if engine != "docling":
-                    found = [t for t in (_trim(t, slog) for t in _page_tables(page, pi, TEXT_SETTINGS)) if t
+                    found = [t for t in (_trim(t, slog) for t in _stream_tables(page, pi)) if t
                              and _looks_tabular([t.row(r, 0) for r in range(len(t.grid))])]
                 # no ruling lines: cell boundaries are guessed from text alignment, so the table
                 # model reads the page too and the better reading wins
@@ -617,9 +917,18 @@ def ingest_pdf(path: Path, work_dir: Path, name: str, progress=lambda p, m: None
                         reader_used["vision"] += 1
                 if found and found[0].reader == "text":
                     borderless += len(found)
+            above = _lines_above(page, found[0].top) if found else None
             for ti, pt in enumerate(found):
                 g = groups[-1] if groups else None
-                if g and ti == 0 and g.last_page == pi - 1 and g.parts[-1][0].page == pi - 1:
+                caption = _caption(above, prev_above) if ti == 0 else None
+                if caption and g and g.last_page == pi - 1:
+                    slog.note("Page {p} starts a new table (title above it: {t}).", p=pi + 1, t=caption[:120])
+                elif g and ti == 0 and g.last_page == pi - 1 and len(g.parts) == 1 and _side_by_side(g.first, pt):
+                    _join_columns(g.first, pt)
+                    g.last_page = pi
+                    slog.note("Page {p} continues the table's columns (same rows); joined side by side.", p=pi + 1)
+                    continue
+                elif g and ti == 0 and g.last_page == pi - 1 and g.parts[-1][0].page == pi - 1:
                     mapping = _align(g.first.cols, pt.cols)
                     if mapping is not None:
                         rows = [_remap(pt.row(r, LOOK), mapping, g.width) for r in range(min(LOOK, len(pt.grid)))]
@@ -633,6 +942,7 @@ def ingest_pdf(path: Path, work_dir: Path, name: str, progress=lambda p, m: None
                             g.last_page = pi
                             continue
                 groups.append(Group(pt))
+            prev_above = above
             text = page.extract_text() or ""
             if len(text.strip()) < 20 and not found:
                 try:
@@ -641,7 +951,7 @@ def ingest_pdf(path: Path, work_dir: Path, name: str, progress=lambda p, m: None
                 except Exception:
                     pass
             page_lines.append([norm_text(l) for l in text.splitlines()])
-            page.flush_cache()
+            raw.flush_cache()
             cancel.check()
 
     if reader_used["docling"]:
@@ -660,6 +970,13 @@ def ingest_pdf(path: Path, work_dir: Path, name: str, progress=lambda p, m: None
         t = _group_to_table(g, gi, ai, log, work_dir, name)
         if t is not None and t.n_rows:
             tables.append(t)
+    # framed one-row boxes next to real tables: signature blocks, letterheads, stamps
+    boxes = [t for t in tables if t.n_rows < 2]
+    if boxes and len(boxes) < len(tables):
+        tables = [t for t in tables if t.n_rows >= 2]
+        for i, t in enumerate(tables):
+            t.name = re.sub(r"^table_\d+", f"table_{i + 1}", t.name)
+        tables[0].repairs.note("{n} single-row box(es) (signature blocks, letterheads) skipped.", n=len(boxes))
     if tables:
         return tables
 
@@ -692,7 +1009,10 @@ def ingest_pdf(path: Path, work_dir: Path, name: str, progress=lambda p, m: None
                     continue
                 f.write(l + "\n")
     progress(0.3, "No tables found: parsing PDF text layer")
-    tables = ingest_delimited(text_path, work_dir, f"{name}_text", progress)
+    tables = [t for t in ingest_delimited(text_path, work_dir, f"{name}_text", progress) if _tabular_text(t)]
+    if not tables:
+        raise ValueError("No table found in this PDF: it holds running text (letters, articles, forms), "
+                         "not rows and columns.")
     for t in tables:
         t.name = "pdf_text"
         t.source = {"format": "pdf-text", "pages": len(page_lines)}

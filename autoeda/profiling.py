@@ -108,8 +108,8 @@ class TableProfiler:
             "name": t.name, "source": t.source, "n_rows": self.n, "n_cols": len(cols),
             "approximate": self.huge, "sample_rows": self.sample_n, "engine": self.engine,
             "repairs": t.repairs.to_dict(), "columns": profiles,
-            "duplicates": self._duplicates(cols),
-            "correlations": self._correlations(profiles),
+            "duplicates": self._duplicates(cols) if config.EDA_DUPLICATES else None,
+            "correlations": self._correlations(profiles) if config.EDA_MULTIVARIATE else [],
         }
         total_cells = self.n * len(cols)
         miss = sum(p["missing"] for p in profiles)
@@ -229,10 +229,13 @@ class TableProfiler:
               avg(len(string_split(v, ' '))),
               count(DISTINCT v),
               count(*) FILTER (WHERE regexp_full_match(v, '[-+]?\\d(\\.\\d+)?[eE]\\+\\d+')),
+              count(*) FILTER (WHERE regexp_full_match(v, '[-+]?[1-9]\\d{{0,2}}(\\.\\d{{3}})+')),
+              count(*) FILTER (WHERE regexp_full_match(v, '[-+]?\\d+')),
+              count(*) FILTER (WHERE regexp_full_match(v, '[-+]?[1-9]\\d{{0,2}}\\.\\d{{1,2}}')),
               {sem}
             FROM v""")
         keys = ["nn", "dbl", "numfmt", "eu", "us", "unit", "bool", "distinct_lower", "ts", "datey", "lead0", "words",
-                "distinct", "sci"]
+                "distinct", "sci", "dot3", "int", "dotshort"]
         out = dict(zip(keys, r[:len(keys)]))
         out["semantic"] = dict(zip(SEMANTIC_RE.keys(), r[len(keys):]))
         return out
@@ -255,6 +258,11 @@ class TableProfiler:
     def _decide_type(self, c) -> dict:
         """Return {type, conv, note, ...}. `conv` names the conversion from the raw
         column to a typed value; conv_expr() renders it in the engine's SQL dialect."""
+        learned = (getattr(self.t, "type_hints", None) or {}).get(c["name"])
+        if learned and c["kind"] == "str":       # user feedback: keep as text / ID / category
+            c["_inf"] = self._infer_str(c)
+            return {"type": "text", "note": "Kept as text (learned from user feedback).",
+                    "code": learned == "identifier"}
         if c["kind"] == "num":
             return {"type": "numeric", "conv": "num_native"}
         if c["kind"] == "bool":
@@ -269,6 +277,12 @@ class TableProfiler:
         th = 0.8 * nn
         if inf["bool"] >= 0.98 * nn and inf["distinct_lower"] <= 2:
             return {"type": "boolean", "conv": "bool_str"}
+        # '.' as thousands separator next to plain integers (397.278 beside 9002), common in
+        # Indonesian / European exports; '47.19' there is 47.190 with the trailing zero dropped
+        if inf["dot3"] >= max(2, 0.2 * nn) and inf["int"] >= 1 and inf["dotshort"] <= 0.25 * nn \
+                and inf["dot3"] + inf["int"] + inf["dotshort"] >= 0.95 * nn:
+            return {"type": "numeric", "conv": "num_dot3", "short_groups": inf["dotshort"],
+                    "note": "'.' is a thousands separator in this column (397.278 = 397,278)."}
         if inf["lead0"] >= 0.1 * nn and inf["dbl"] >= th:
             return {"type": "text", "note": "Numeric-looking code with leading zeros: kept as text.", "code": True}
         if inf["dbl"] >= th and inf["dbl"] >= inf["numfmt"]:
@@ -308,6 +322,10 @@ class TableProfiler:
             "num_us": f"({NEG_SIGN.format(v=v)} * TRY_CAST(regexp_replace({v}, '[^0-9.]', '', 'g') AS DOUBLE))",
             "num_eu": f"({NEG_SIGN.format(v=v)} * TRY_CAST(replace(regexp_replace({v}, '[^0-9,]', '', 'g'), ',', '.') AS DOUBLE))",
             "unit": f"TRY_CAST(replace(regexp_extract({v}, '^[-+]?\\d+([.,]\\d+)?'), ',', '.') AS DOUBLE)",
+            # 397.278 -> 397278; 47.19 -> 47190 (trailing zero dropped)
+            "num_dot3": f"TRY_CAST(CASE WHEN regexp_full_match({v}, '[-+]?[1-9]\\d{{0,2}}\\.\\d{{1,2}}') "
+                        f"THEN split_part({v}, '.', 1) || rpad(split_part({v}, '.', 2), 3, '0') "
+                        f"ELSE replace({v}, '.', '') END AS DOUBLE)",
             "ts": f"TRY_CAST({v} AS TIMESTAMP)",
             "ts_fmt": f"COALESCE(TRY_CAST({v} AS TIMESTAMP), try_strptime({v}, {lit(d.get('fmt', ''))}))",
         }.get(d.get("conv"), x)
@@ -377,6 +395,20 @@ class TableProfiler:
             flags.append(_flag("warn", "scientific_notation",
                                "{pct:.0f}% of values are in scientific notation (e.g. 1.23E+15).",
                                pct=_pct(inf["sci"], inf["nn"])))
+        inf = c.get("_inf") or {}
+        if d.get("conv") == "double" and inf.get("dot3", 0) >= 0.8 * inf.get("nn", 1) and not inf.get("int"):
+            # every value has three digits after '.': decimals, or thousands written as 55.315?
+            flags.append(_flag("warn", "maybe_thousands",
+                               "Almost every value has exactly 3 digits after '.', e.g. {ex}: '.' may be a thousands "
+                               "separator (55.315 = 55,315); values were read as decimals.",
+                               ex=next(iter(p.get("top_values") or []), [""])[0]))
+        if d.get("short_groups"):
+            col = f"trim({ident(c['name'])})"
+            ex = [[v, None] for (v,) in self.q(
+                f"SELECT DISTINCT {col} FROM s WHERE regexp_full_match({col}, '[-+]?[1-9]\\d{{0,2}}\\.\\d{{1,2}}') LIMIT 3")]
+            flags.append(_flag("warn", "thousands_ambiguous",
+                               "{n} value(s) have fewer than 3 digits after the thousands dot; read as if a trailing "
+                               "zero was dropped (47.19 = 47,190).", ex, n=d["short_groups"]))
         if d.get("ambiguous"):
             flags.append(_flag("warn", "ambiguous_dates", "Day and month could be swapped (most days are 12 or less); "
                                                           "assumed format {fmt}.", fmt=d["fmt"]))
@@ -560,6 +592,11 @@ class TableProfiler:
             sub = "text"
         p["inferred_type"] = "categorical" if sub == "categorical" else "text"
         p["semantic"] = sem or (sub if sub in ("identifier", "free text", "code") else None)
+        learned = (getattr(self.t, "type_hints", None) or {}).get(c["name"])
+        if learned == "identifier":
+            p["semantic"] = "identifier"
+        elif learned == "category":
+            p["inferred_type"] = "categorical"
         p["text"] = {"len_min": c.get("len_min"), "len_max": c.get("len_max"), "len_avg": avg_len,
                      "avg_words": words, "subtype": sub}
         p["top_values"] = self._top(c, None, 10, self._need_sample_top(c))

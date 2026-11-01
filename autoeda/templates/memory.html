@@ -1,0 +1,106 @@
+{% extends "layout.html" %}
+{% block title %}Data Check · Memory{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1 class="title is-4">🧠 <span data-t="title"></span></h1><p class="sub" data-t="sub"></p></div>
+  {% if user.role == 'admin' %}<button class="button is-small is-danger is-outlined" id="clear" data-t="clear"></button>{% endif %}
+</div>
+<div class="notification is-link is-light" data-t="intro"></div>
+{% if user.role != 'admin' %}<p class="sub mb-4">🔒 <span data-t="admin_only"></span></p>{% endif %}
+<h2 class="title is-5" data-t="skills"></h2>
+<div id="skills"></div>
+<h2 class="title is-5 mt-5" data-t="history"></h2>
+<div class="box" id="history"></div>
+{% endblock %}
+{% block script %}
+<script>
+addT({
+  en: { title: 'Memory', sub: 'What the app has learned from your comments',
+    intro: 'Each comment on a report becomes a skill: a lesson for files of the same kind. Skills apply to new runs at once: their instruction is given to the AI, and their hints change how tables are read. Edit, switch off or delete any skill here.',
+    skills: 'Skills', history: 'Comments received', none: 'No skills yet. Comment on a table in a report to teach the app.',
+    nohist: 'No comments yet.', name: 'Name', instruction: 'Instruction for the AI', keywords: 'Applies to files that show these words (comma-separated)',
+    formats: 'File formats (empty = all)', hints: 'Hints the table reader obeys (JSON)', on: 'Active', save: 'Save', del: 'Delete',
+    saved: 'Saved.', badjson: 'Hints must be valid JSON, e.g. {"header_rows": 2}.', failed: 'That did not work.',
+    confirm: 'Delete this skill? Later runs will no longer use it.', used: 'used {n}×', version: 'version {n}', from: 'from {n} comment(s)',
+    learned: 'learned', refined: 'refined', ignored: 'no change', keys: 'Known hints:',
+    clear: 'Clear memory', clear_t: 'Forget everything?', clearq: 'Forget all skills and comments? Later runs will read files without them. This cannot be undone (unless the memory folder is in git).',
+    cleared: 'Memory cleared: {s} skill(s), {f} comment(s).' },
+  id: { title: 'Memori', sub: 'Yang dipelajari aplikasi dari komentar Anda',
+    intro: 'Setiap komentar pada laporan menjadi keterampilan: pelajaran untuk file sejenis. Keterampilan langsung berlaku pada proses baru: instruksinya diberikan ke AI, dan petunjuknya mengubah cara tabel dibaca. Ubah, matikan, atau hapus keterampilan di sini.',
+    skills: 'Keterampilan', history: 'Komentar yang diterima', none: 'Belum ada keterampilan. Beri komentar pada tabel di laporan untuk mengajari aplikasi.',
+    nohist: 'Belum ada komentar.', name: 'Nama', instruction: 'Instruksi untuk AI', keywords: 'Berlaku untuk file yang memuat kata-kata ini (pisahkan dengan koma)',
+    formats: 'Format file (kosong = semua)', hints: 'Petunjuk untuk pembaca tabel (JSON)', on: 'Aktif', save: 'Simpan', del: 'Hapus',
+    saved: 'Tersimpan.', badjson: 'Petunjuk harus JSON yang valid, mis. {"header_rows": 2}.', failed: 'Gagal.',
+    confirm: 'Hapus keterampilan ini? Proses berikutnya tidak akan memakainya lagi.', used: 'dipakai {n}×', version: 'versi {n}', from: 'dari {n} komentar',
+    learned: 'dipelajari', refined: 'diperbarui', ignored: 'tidak berubah', keys: 'Petunjuk yang dikenal:',
+    clear: 'Hapus memori', clear_t: 'Lupakan semuanya?', clearq: 'Lupakan semua keterampilan dan komentar? Proses berikutnya membaca file tanpa itu. Tidak bisa dibatalkan (kecuali folder memori ada di git).',
+    cleared: 'Memori dihapus: {s} keterampilan, {f} komentar.' }
+});
+var DATA = { skills: [], feedback: [], hint_keys: {} };
+function field(card, label, node) { var f = el('div', { 'class': 'field' }); f.appendChild(el('label', { 'class': 'label is-small' }, label)); f.appendChild(node); card.appendChild(f); return node; }
+function skillCard(s) {
+  var c = el('section', { 'class': 'box' + (s.enabled === false ? ' has-text-grey' : '') });
+  var name = field(c, t('name'), el('input', { 'class': 'input', type: 'text' })); name.value = s.title || '';
+  var instr = field(c, t('instruction'), el('textarea', { 'class': 'textarea', rows: 3 })); instr.value = s.instruction || '';
+  var kw = field(c, t('keywords'), el('input', { 'class': 'input', type: 'text' })); kw.value = (s.keywords || []).join(', ');
+  var fm = field(c, t('formats'), el('input', { 'class': 'input', type: 'text' })); fm.value = (s.formats || []).join(', ');
+  var hints = field(c, t('hints'), el('textarea', { 'class': 'textarea is-family-monospace is-size-7', rows: 3 })); hints.value = JSON.stringify(s.hints || {}, null, 1);
+  c.appendChild(el('p', { 'class': 'sub mb-3' }, t('keys') + ' ' + Object.keys(DATA.hint_keys).join(', ')));
+  var row = el('div', { 'class': 'buttons is-align-items-center' });
+  var lab = el('label', { 'class': 'checkbox mr-3' });
+  var on = el('input', { type: 'checkbox' }); on.checked = s.enabled !== false; lab.appendChild(on); lab.appendChild(document.createTextNode(' ' + t('on')));
+  var save = el('button', { 'class': 'button is-link is-small' }, t('save')), del = el('button', { 'class': 'button is-danger is-light is-small' }, t('del'));
+  row.appendChild(lab); row.appendChild(save); row.appendChild(del);
+  c.appendChild(row);
+  c.appendChild(el('p', { 'class': 'sub' }, [t('used', { n: s.uses || 0 }), t('version', { n: s.version || 1 }),
+    t('from', { n: (s.sources || []).length }), when(s.updated)].join(' · ')));
+  if (!IS_ADMIN) { c.querySelectorAll('input, textarea, button').forEach(function (x) { x.disabled = true; }); return c; }
+  save.onclick = function () {
+    var h;
+    try { h = JSON.parse(hints.value || '{}'); } catch (e) { toast(t('badjson'), 'bad'); return; }
+    var body = { title: name.value, instruction: instr.value, hints: h, enabled: on.checked,
+      keywords: kw.value.split(',').map(function (x) { return x.trim(); }).filter(Boolean),
+      formats: fm.value.split(',').map(function (x) { return x.trim(); }).filter(Boolean) };
+    fetch('/api/memory/skills/' + s.id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      .then(function (r) { if (!r.ok) throw r; return r.json(); })
+      .then(function (n) { toast(t('saved'), 'good'); hints.value = JSON.stringify(n.hints || {}, null, 1); c.classList.toggle('has-text-grey', !n.enabled); })
+      .catch(function () { toast(t('failed'), 'bad'); });
+  };
+  del.onclick = function () {
+    ask(t('del'), t('confirm'), t('del'), true).then(function (ok) {
+      if (ok) fetch('/api/memory/skills/' + s.id, { method: 'DELETE' }).then(function (r) { if (!r.ok) throw r; load(); })
+        .catch(function () { toast(t('failed'), 'bad'); });
+    });
+  };
+  return c;
+}
+function render() {
+  var box = $('skills'); box.innerHTML = '';
+  if (!DATA.skills.length) box.appendChild(el('p', { 'class': 'sub' }, t('none')));
+  DATA.skills.slice().sort(function (a, b) { return (b.updated || 0) - (a.updated || 0); }).forEach(function (s) { box.appendChild(skillCard(s)); });
+  var hist = $('history'); hist.innerHTML = '';
+  if (!DATA.feedback.length) hist.appendChild(el('p', { 'class': 'sub' }, t('nohist')));
+  var names = {}; DATA.skills.forEach(function (s) { names[s.id] = s.title; });
+  DATA.feedback.forEach(function (f) {
+    var d = el('article', { 'class': 'media' }), b = el('div', { 'class': 'media-content' });
+    b.appendChild(el('p', {}, '“' + f.comment + '”'));
+    var act = f.action === 'update' ? t('refined') : f.action === 'none' ? t('ignored') : t('learned');
+    b.appendChild(el('p', { 'class': 'sub' }, [when(f.time), f.file, f.table, act + (f.skill && names[f.skill] ? ': ' + names[f.skill] : '')]
+      .filter(Boolean).join(' · ')));
+    d.appendChild(b); hist.appendChild(d);
+  });
+}
+function load() { fetch('/api/memory').then(function (r) { return r.json(); }).then(function (j) { DATA = j; render(); }); }
+if ($('clear')) $('clear').onclick = function () {
+  ask(t('clear_t'), t('clearq'), t('clear'), true).then(function (ok) {
+    if (!ok) return;
+    fetch('/api/memory', { method: 'DELETE' }).then(function (r) { if (!r.ok) throw r; return r.json(); })
+      .then(function (j) { toast(t('cleared', { s: j.cleared.skills, f: j.cleared.feedback }), 'good'); load(); })
+      .catch(function () { toast(t('failed'), 'bad'); });
+  });
+};
+function onLang() { document.title = t('app_title') + ' · ' + t('title'); render(); }
+boot();
+load();
+</script>
+{% endblock %}
