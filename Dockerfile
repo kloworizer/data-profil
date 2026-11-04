@@ -7,10 +7,14 @@ FROM python:3.12-slim-bookworm
 # --build-arg WITH_OCR=1   : Tesseract OCR for scanned PDFs.
 # --build-arg WITH_DOCLING=1 : Docling TableFormer (CPU PyTorch) as a second PDF table reader,
 #                            models baked into the image (nothing downloads at runtime).
+# --build-arg PIP_TIMEOUT=15 : pip's network read timeout in seconds. Raise it on slow links or
+#                            behind an HTTPS-inspecting proxy, where the large PyTorch wheels
+#                            (download-r2.pytorch.org) can time out with pip's default.
 ARG WITH_SPARK=0
 ARG WITH_OCR=0
 ARG WITH_DOCLING=0
 ARG PYSPARK_VERSION=3.5.3
+ARG PIP_TIMEOUT=15
 
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
     AUTOEDA_DATA_DIR=/data AUTOEDA_INPUT_DIR=/input \
@@ -22,9 +26,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
     REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
     PIP_CERT=/etc/ssl/certs/ca-certificates.crt
 
-# Extra root CAs for HTTPS-inspecting proxies / antivirus (certs/*.crt, optional)
+# Extra root CAs for HTTPS-inspecting proxies / antivirus (certs/*.crt, certs/*.pem, optional)
 COPY certs/ /usr/local/share/ca-certificates/extra/
-RUN update-ca-certificates >/dev/null 2>&1 || true
+RUN cd /usr/local/share/ca-certificates/extra && \
+    for f in *.pem *.cer; do [ -f "$f" ] && cp "$f" "${f%.*}.crt"; done 2>/dev/null; \
+    update-ca-certificates >/dev/null 2>&1 || true
 
 RUN pkgs=""; \
     if [ "$WITH_SPARK" = "1" ]; then pkgs="$pkgs openjdk-17-jre-headless procps"; fi; \
@@ -33,13 +39,14 @@ RUN pkgs=""; \
       rm -rf /var/lib/apt/lists/*; fi
 
 WORKDIR /app
+ENV PIP_DEFAULT_TIMEOUT=${PIP_TIMEOUT}
 COPY requirements.txt requirements-docling.txt ./
-RUN pip install --no-cache-dir -r requirements.txt && \
-    if [ "$WITH_SPARK" = "1" ]; then pip install --no-cache-dir "pyspark==${PYSPARK_VERSION}"; fi && \
-    if [ "$WITH_OCR" = "1" ]; then pip install --no-cache-dir pytesseract; fi && \
+RUN pip install --default-timeout="${PIP_TIMEOUT}" --no-cache-dir -r requirements.txt && \
+    if [ "$WITH_SPARK" = "1" ]; then pip install --default-timeout="${PIP_TIMEOUT}" --no-cache-dir "pyspark==${PYSPARK_VERSION}"; fi && \
+    if [ "$WITH_OCR" = "1" ]; then pip install --default-timeout="${PIP_TIMEOUT}" --no-cache-dir pytesseract; fi && \
     if [ "$WITH_DOCLING" = "1" ]; then \
-      pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu && \
-      pip install --no-cache-dir -r requirements-docling.txt && \
+      pip install --default-timeout="${PIP_TIMEOUT}" --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu && \
+      pip install --default-timeout="${PIP_TIMEOUT}" --no-cache-dir -r requirements-docling.txt && \
       docling-tools models download layout tableformer -o /app/models/docling; fi
 ENV AUTOEDA_DOCLING_MODELS=/app/models/docling HF_HUB_OFFLINE=1
 

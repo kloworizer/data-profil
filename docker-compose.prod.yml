@@ -33,6 +33,11 @@ services:
     command: ["web"]
     network_mode: host
     environment:
+      # Host-network service: the UI/REST binds this port directly. 9444 is already allowed through
+      # the firewall and no other service on the host listens on it (check with:
+      #   ss -ltnp | grep :9444     and from the client: curl -sI http://<host>:9444/health )
+      # Change it here if 9444 is taken; keep it in sync with any firewall rule.
+      AUTOEDA_PORT: "9444"
       # Sign-in: the first start creates this administrator (then change the password on the Users
       # page; the variable is ignored once users exist). Unset: a random password is printed to the log.
       AUTOEDA_ADMIN_USER: admin
@@ -82,8 +87,21 @@ services:
   ollama:
     image: ollama/ollama:latest      # the tag saved in the bundle
     network_mode: host
+    # CPU limits for CPU-only inference. Without OLLAMA_NUM_THREADS, llama.cpp starts one thread per
+    # logical core it sees (72 here) and the threads thrash each other's caches across NUMA sockets:
+    # 3600% CPU with little throughput. ~1 thread per *physical* core of one socket is the sweet spot
+    # for a dense 35B model; MoE (35b-a3b) activates ~3B per token so it scales even less.
+    #
+    # cpuset must be picked per host: `lscpu -e=CPU,CORE,SOCKET,NODE` and stay inside ONE socket.
+    # Check first whether the host already constrains it (systemd AllowedCPUs, cgroup cpuset):
+    #   cat /sys/fs/cgroup/cpuset.cpus.effective
+    # If the Spark executors really use all 72 cores, reserve a whole socket for Ollama, e.g. "36-71".
+    # Remove cpuset entirely if the Spark cluster runs on other hosts and this one is Ollama-only.
+    cpuset: "${OLLAMA_CPUSET:-0-11}"
     environment:
       OLLAMA_HOST: 127.0.0.1:11434
+      # Threads per request: keep <= the CPU count of cpuset above (and <= physical cores/socket).
+      OLLAMA_NUM_THREADS: "${OLLAMA_NUM_THREADS:-8}"
       OLLAMA_KEEP_ALIVE: 24h          # keep the 22 GB model loaded between jobs (reloading takes a while)
       OLLAMA_NUM_PARALLEL: "2"        # = AUTOEDA_MAX_JOBS
       OLLAMA_MAX_LOADED_MODELS: "2"   # 35b-a3b and 2b side by side (RAM is plentiful)
@@ -106,4 +124,6 @@ services:
 
 volumes:
   ollama:
+    # fixed name: the offline installer creates it and preloads the models into it, so it is external
     name: autoeda_ollama
+    external: true

@@ -95,8 +95,10 @@ step "4/5 Installing on the server"
 rsh "cd $REMOTE_DIR && chmod +x install_offline.sh && sed -i 's/\r\$//' install_offline.sh && SUDO=$SUDO ./install_offline.sh $COMPOSE"
 
 step "5/5 Health check"
-rsh "for i in \$(seq 1 30); do curl -fs http://localhost:8000/health >/dev/null 2>&1 && { echo 'AutoEDA is up.'; exit 0; }; sleep 2; done; echo 'WARNING: no answer on port 8000 yet; check: $SUDO docker compose -f $REMOTE_DIR/$COMPOSE logs autoeda'"
+WEB_PORT=$(rsh "cd $REMOTE_DIR && $SUDO docker compose -f $COMPOSE config 2>/dev/null | sed -n 's/.*AUTOEDA_PORT: *\"\\{0,1\\}\\([0-9]\\{1,5\\}\\)\"\\{0,1\\}.*/\\1/p' | head -n1")
+WEB_PORT=${WEB_PORT:-8000}
+rsh "for i in \$(seq 1 30); do curl -fs http://localhost:$WEB_PORT/health >/dev/null 2>&1 && { echo 'AutoEDA is up.'; exit 0; }; sleep 2; done; echo 'WARNING: no answer on port $WEB_PORT yet; check: $SUDO docker compose -f $REMOTE_DIR/$COMPOSE logs autoeda'"
 HOST=${TARGET#*@}
 echo
-echo "Open http://$HOST:8000 in a browser on the server's network."
+echo "Open http://$HOST:$WEB_PORT in a browser on the server's network."
 echo "Large data files: copy them to $TARGET:$REMOTE_DIR/input/  (e.g. scp bigfile.csv $TARGET:$REMOTE_DIR/input/)"

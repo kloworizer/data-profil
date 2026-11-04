@@ -82,10 +82,16 @@ services:
 
   ollama:
     image: ollama/ollama:latest   # pin a tag for reproducible deployments
+    # CPU-only inference: bound the threads (see docker-compose.prod.yml for the long explanation)
+    cpuset: "${OLLAMA_CPUSET:-0-7}"
+    environment:
+      OLLAMA_NUM_THREADS: "${OLLAMA_NUM_THREADS:-4}"
     volumes:
       - ollama:/root/.ollama
     restart: unless-stopped
 
 volumes:
   ollama:
-    name: autoeda_ollama   # fixed name: the offline installer preloads models into it
+    # fixed name: the offline installer creates it and preloads the models into it, so it is external
+    name: autoeda_ollama
+    external: true

@@ -30,3 +30,9 @@ models/
 
 # Machine-specific docker compose settings
 .env
+
+certs/*.crt
+certs/*.pem
+certs/*.key
+certs/*.csr
+certs/*.der

@@ -8,7 +8,8 @@
 #   APP_ONLY=1                       only the AutoEDA image (for updates; Ollama + models already on the server)
 #   TAG=autoeda:poc                  image tag to build
 #   OLLAMA_IMAGE=ollama/ollama:latest   pin a version for reproducibility
-#   MODELS="qwen3.5:35b-a3b qwen3.5:2b"  Ollama models to include (first = production default, see below)
+#   MODELS="qwen3.5:35b-a3b qwen3.5:2b"  Ollama models to include. Default: qwen3.5:35b-a3b,
+#                                    because docker-compose.prod.yml sets OLLAMA_MODEL=qwen3.5:35b-a3b
 #   OLLAMA_MODELS_DIR=~/.ollama/models  take models from this folder (the local Ollama's store); models
 #                                    missing there are pulled first with the local `ollama` CLI
 #
@@ -31,7 +32,7 @@ OUT=${1:-offline_bundle}
 APP_ONLY=${APP_ONLY:-0}
 TAG=${TAG:-autoeda:poc}
 OLLAMA_IMAGE=${OLLAMA_IMAGE:-ollama/ollama:latest}
-MODELS=${MODELS:-qwen3.5:35b-a3b qwen3.5:2b}
+MODELS=${MODELS:-qwen3.5:35b-a3b}
 PYSPARK_VERSION=${PYSPARK_VERSION:-3.5.3}
 WITH_DOCLING=${WITH_DOCLING:-1}
 mkdir -p "$OUT"
@@ -50,6 +51,16 @@ if [ "$APP_ONLY" != "1" ]; then
   docker save "$OLLAMA_IMAGE" | gzip > "$OUT/ollama_image.tar.gz"
 
   echo "==> Collecting Ollama models: $MODELS"
+  # docker-compose.prod.yml tells the app which model to call. Bundling only other models produces a
+  # bundle that installs fine and then fails every AI step on the air-gapped server.
+  COMPOSE_MODEL=$(sed -n 's/^[[:space:]]*OLLAMA_MODEL:[[:space:]]*//p' docker-compose.prod.yml | head -n1)
+  if [ -n "$COMPOSE_MODEL" ]; then
+    case " $MODELS " in
+      *" $COMPOSE_MODEL "*) ;;
+      *) echo "WARNING: docker-compose.prod.yml sets OLLAMA_MODEL=$COMPOSE_MODEL but the bundle gets: $MODELS" >&2
+         echo "         Add it: MODELS=\"$COMPOSE_MODEL\" scripts/offline_bundle.sh" >&2 ;;
+    esac
+  fi
   if [ -n "${OLLAMA_MODELS_DIR:-}" ]; then
     # pull what is missing with the local Ollama (it trusts the OS certificate store, so it also works
     # behind HTTPS inspection), then bundle only the selected models, not the whole folder
@@ -58,6 +69,7 @@ if [ "$APP_ONLY" != "1" ]; then
         ollama show "$m" >/dev/null 2>&1 || { echo "    pulling $m (first time only)"; ollama pull "$m"; }
       done
     fi
+    echo "    source: $OLLAMA_MODELS_DIR"
     : > "$OUT/.model_files"
     for m in $MODELS; do
       name=${m%%:*}; tag=${m#*:}; [ "$tag" = "$m" ] && tag=latest
@@ -66,6 +78,7 @@ if [ "$APP_ONLY" != "1" ]; then
       if [ ! -f "$OLLAMA_MODELS_DIR/$man" ]; then
         echo "ERROR: model $m is not in $OLLAMA_MODELS_DIR (run: ollama pull $m)" >&2; exit 1
       fi
+      echo "    $m -> $man"
       echo "$man" >> "$OUT/.model_files"
       grep -o 'sha256:[0-9a-f]\{64\}' "$OLLAMA_MODELS_DIR/$man" | sort -u | sed 's#sha256:#blobs/sha256-#' >> "$OUT/.model_files"
     done
@@ -73,6 +86,7 @@ if [ "$APP_ONLY" != "1" ]; then
     docker run --rm --user root --entrypoint sh -v "$SRC_ABS:/src:ro" -v "$OUT_ABS:/out" "$TAG" \
       -c "cd /src && tar czf /out/ollama_models.tgz -T /out/.model_files"
     rm -f "$OUT/.model_files"
+    echo "    ollama_models.tgz: $(du -h "$OUT/ollama_models.tgz" | cut -f1) (selected models only)"
   else
     docker volume create autoeda_bundle_models >/dev/null
     docker rm -f autoeda_bundle_ollama >/dev/null 2>&1 || true
