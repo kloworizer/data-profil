@@ -78,7 +78,7 @@ services:
       # logical core of the container (72 here) -> threads straddle the two sockets and run slower.
       # Use the physical cores of ONE socket (Xeon Gold 6140: 18). 0 = let Ollama decide.
       # Also on Settings -> CPU threads per AI call.
-      OLLAMA_NUM_THREAD: "18"
+      OLLAMA_NUM_THREAD: "12"
       # Keep the loaded model resident between jobs (22 GB; loading takes minutes). Also sent per request.
       OLLAMA_KEEP_ALIVE: 4h
       AUTOEDA_MEMORY_DIR: /memory
@@ -116,7 +116,7 @@ services:
       # one thread per logical core it sees. The app limits threads per request instead:
       # OLLAMA_NUM_THREAD on the autoeda service (model option num_thread). Keep this only as a
       # sane default for direct `ollama run` use.
-      OLLAMA_NUM_THREADS: "18"
+      OLLAMA_NUM_THREADS: "12"
       # Model load has its own timeout, separate from the HTTP request: with `ollama run` / `curl`
       # the client gives up first and the load is aborted ("context canceled"). 35B on CPU takes
       # minutes; 15m leaves room. After the first load the model stays resident.
