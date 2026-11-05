@@ -64,8 +64,8 @@ services:
       #   spark.kerberos.principal=autoeda@REALM;spark.kerberos.keytab=/etc/security/keytabs/autoeda.keytab
       # and mount /etc/krb5.conf and the keytab (volumes below). WebHDFS browsing then needs HttpFS / Knox.
       # local DuckDB engine (Excel / PDF / XML / SQLite, or when chosen in the UI) on one big node
-      AUTOEDA_MEMORY_LIMIT: 256GB
-      AUTOEDA_THREADS: "64"
+      AUTOEDA_MEMORY_LIMIT: 72GB
+      AUTOEDA_THREADS: "16"
       AUTOEDA_MAX_JOBS: "2"
       AUTOEDA_LLM_BATCH: "8"
       AUTOEDA_LLM_TIMEOUT: "600"      # CPU inference: a page image or a long batch can take minutes
@@ -73,6 +73,14 @@ services:
       # Mixture-of-experts: 35B parameters, ~3B active per token -> small-model speed on CPU, much
       # better answers, reads images (PDF table layout). qwen3.5:2b (also bundled) stays selectable in the UI.
       OLLAMA_MODEL: qwen3.5:35b-a3b
+      # CPU threads for inference, sent as the Ollama model option num_thread with EVERY request.
+      # Current Ollama runs llama-server, which ignores OLLAMA_NUM_THREADS and uses one thread per
+      # logical core of the container (72 here) -> threads straddle the two sockets and run slower.
+      # Use the physical cores of ONE socket (Xeon Gold 6140: 18). 0 = let Ollama decide.
+      # Also on Settings -> CPU threads per AI call.
+      OLLAMA_NUM_THREAD: "18"
+      # Keep the loaded model resident between jobs (22 GB; loading takes minutes). Also sent per request.
+      OLLAMA_KEEP_ALIVE: 4h
       AUTOEDA_MEMORY_DIR: /memory
     volumes:
       - /srv/autoeda/data:/data
@@ -97,13 +105,26 @@ services:
     #   cat /sys/fs/cgroup/cpuset.cpus.effective
     # If the Spark executors really use all 72 cores, reserve a whole socket for Ollama, e.g. "36-71".
     # Remove cpuset entirely if the Spark cluster runs on other hosts and this one is Ollama-only.
-    cpuset: "${OLLAMA_CPUSET:-0-11}"
+    # cpuset needs cgroup v2 (modern kernels). On a host without it Docker rejects the container with
+    # "cannot set cpuset: no cgroup v2 support" - comment the line out there and rely on
+    # OLLAMA_NUM_THREADS alone (the cpuset only reinforces that limit: llama.cpp creates
+    # OLLAMA_NUM_THREADS threads whatever the container sees).
+    cpuset: "0-11"
     environment:
       OLLAMA_HOST: 127.0.0.1:11434
-      # Threads per request: keep <= the CPU count of cpuset above (and <= physical cores/socket).
-      OLLAMA_NUM_THREADS: "${OLLAMA_NUM_THREADS:-8}"
-      OLLAMA_KEEP_ALIVE: 24h          # keep the 22 GB model loaded between jobs (reloading takes a while)
-      OLLAMA_NUM_PARALLEL: "2"        # = AUTOEDA_MAX_JOBS
+      # NOTE: current Ollama (llama-server based) does NOT apply this to inference threads; it starts
+      # one thread per logical core it sees. The app limits threads per request instead:
+      # OLLAMA_NUM_THREAD on the autoeda service (model option num_thread). Keep this only as a
+      # sane default for direct `ollama run` use.
+      OLLAMA_NUM_THREADS: "18"
+      # Model load has its own timeout, separate from the HTTP request: with `ollama run` / `curl`
+      # the client gives up first and the load is aborted ("context canceled"). 35B on CPU takes
+      # minutes; 15m leaves room. After the first load the model stays resident.
+      OLLAMA_LOAD_TIMEOUT: 15m
+      OLLAMA_KEEP_ALIVE: 4h          # keep the model loaded between jobs (reloading takes a while)
+      # Air-gapped: stop Ollama trying to reach ollama.com for recommendations
+      OLLAMA_NO_CLOUD: "1"
+      OLLAMA_NUM_PARALLEL: "1"        # = AUTOEDA_MAX_JOBS
       OLLAMA_MAX_LOADED_MODELS: "2"   # 35b-a3b and 2b side by side (RAM is plentiful)
     volumes:
       - ollama:/root/.ollama

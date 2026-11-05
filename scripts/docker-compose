@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Wrapper for `docker compose` inside an offline bundle folder.
+#
+# The bundle ships two files (docker-compose.yml for a single server, docker-compose.prod.yml for the
+# air-gapped production hosts). Plain `docker compose` in that folder reads docker-compose.yml, or
+# docker-compose.override.yml, and then fails with things like
+#     stat /srv/autoeda/docker-compose.yml: no such file or directory
+# or quietly starts the laptop settings (4 threads, 0-7 cpuset) on a 72-core host.
+#
+# install_offline.sh symlinks this file to ./docker-compose (and ./.docker-compose) in the bundle, so
+# the compose CLI picks it up as its default file:
+#     docker compose ps          -> prod file when that project is already running, else docker-compose.yml
+#     COMPOSE_FILE=docker-compose.prod.yml docker compose ps    -> explicit, always wins
+# Put it on PATH to make the choice apply in every directory:
+#     ln -s /tmp/offline_bundle/docker-compose /usr/local/bin/docker-compose
+set -euo pipefail
+cd "$(dirname "$(readlink -f "$0")")"
+
+# 1) An explicit COMPOSE_FILE (or -f/--file on the command line) is never overridden.
+if [ -n "${COMPOSE_FILE:-}" ]; then exec docker compose "$@"; fi
+for a in "$@"; do
+  case "$a" in -f|--file|--file=*) exec docker compose "$@" ;; esac
+done
+
+# 2) Detect the compose file the running project was started with.
+running() {
+  docker compose ls --format '{{.ConfigFiles}}' 2>/dev/null \
+    | tr ',' '\n' | sed 's/^ *//' | grep -Fx "$1" >/dev/null 2>&1
+}
+PROD="$PWD/docker-compose.prod.yml"
+LOCAL="$PWD/docker-compose.yml"
+
+if running "$PROD"; then
+  exec docker compose -f "$PROD" "$@"
+elif running "$LOCAL"; then
+  exec docker compose -f "$LOCAL" "$@"
+elif [ -f "$PROD" ] && [ -f "$LOCAL" ]; then
+  # 3) Nothing running yet: docker-compose.prod.yml is only started deliberately (it uses host
+  # networking and expects the Spark / HDFS settings of the production hosts), so default to the
+  # single-server file and say how to get the other one.
+  echo "note: no project is running; using docker-compose.yml" >&2
+  echo "      production hosts: docker compose -f docker-compose.prod.yml up -d" >&2
+  exec docker compose -f "$LOCAL" "$@"
+elif [ -f "$PROD" ]; then
+  exec docker compose -f "$PROD" "$@"
+fi
+exec docker compose "$@"

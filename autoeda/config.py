@@ -2,6 +2,11 @@
 import os
 from pathlib import Path
 
+# Snapshot of the process environment, kept by the settings module to tell where each value comes from
+# (env var vs the Settings page settings.json vs the built-in default). Not used to *read* values; the
+# module attributes below are the single source of truth.
+OS_ENV = dict(os.environ)
+
 
 def _int(name: str, default: int) -> int:
     try:
@@ -22,6 +27,13 @@ INPUT_DIR = Path(os.getenv("AUTOEDA_INPUT_DIR", "./input")).resolve()
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:2b")
+# Threads per inference (llama.cpp): 0 = let Ollama decide. On a multi-socket CPU the default is one
+# thread per logical core, which spreads over both sockets and runs slower than one socket's worth;
+# set this to the physical cores of ONE socket (e.g. 18 on a Xeon Gold 6140). Sent as the Ollama
+# model option num_thread with every request, which beats OLLAMA_NUM_THREADS for llama-server.
+OLLAMA_NUM_THREAD: int = _int("OLLAMA_NUM_THREAD", 0)
+# Keep the model resident between jobs (Ollama duration string: 4h, -1 = forever). Empty = Ollama default.
+OLLAMA_KEEP_ALIVE: str = os.getenv("OLLAMA_KEEP_ALIVE", "")
 LLM_TIMEOUT = _int("AUTOEDA_LLM_TIMEOUT", 180)
 LLM_BATCH = _int("AUTOEDA_LLM_BATCH", 5)            # columns per LLM call
 LLM_MAX_COLUMNS = _int("AUTOEDA_LLM_MAX_COLUMNS", 80)  # beyond this, rule-based text only

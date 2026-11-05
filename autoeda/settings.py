@@ -58,6 +58,16 @@ SCHEMA = [
      "help": ("Ollama model name, e.g. qwen3.5:2b.", "Nama model Ollama, mis. qwen3.5:2b.")},
     {"key": "OLLAMA_HOST", "type": "text", "group": "ai", "label": ("Ollama address", "Alamat Ollama"),
      "help": ("", "")},
+    {"key": "OLLAMA_NUM_THREAD", "type": "int", "group": "ai", "min": 0, "max": 256,
+     "label": ("CPU threads per AI call", "Utas CPU per panggilan AI"),
+     "help": ("0 = automatic. On a multi-socket server use the physical cores of ONE socket "
+              "(e.g. 18), otherwise the threads spread over both sockets and run slower.",
+              "0 = otomatis. Di server multi-socket pakai jumlah core fisik SATU socket "
+              "(mis. 18), agar utas tidak tersebar ke kedua socket dan melambat.")},
+    {"key": "OLLAMA_KEEP_ALIVE", "type": "text", "group": "ai",
+     "label": ("Keep the model loaded (e.g. 4h)", "Tahan model di memori (mis. 4h)"),
+     "help": ("Reloading a 22 GB model takes minutes; empty = Ollama's own default (5m).",
+              "Memuat ulang model 22 GB butuh menit; kosong = bawaan Ollama (5m).")},
     {"key": "LLM_TIMEOUT", "type": "int", "group": "ai", "min": 10, "max": 3600,
      "label": ("AI answer timeout (seconds)", "Batas waktu jawaban AI (detik)"), "help": ("", "")},
     {"key": "LLM_BATCH", "type": "int", "group": "ai", "min": 1, "max": 50,
@@ -148,6 +158,33 @@ _KEYS = {s["key"]: s for s in SCHEMA}
 _lock = threading.Lock()
 DEFAULTS = {s["key"]: getattr(config, s["key"]) for s in SCHEMA}     # environment / built-in values
 
+# Environment variable that feeds each key (most are the key itself; the ones with a prefix differ).
+# Used only to report the source; config.py remains the authority on the actual value.
+_ENV_NAME = {
+    "DATA_DIR": "AUTOEDA_DATA_DIR",
+    "MEMORY_DIR": "AUTOEDA_MEMORY_DIR",
+    "INPUT_DIR": "AUTOEDA_INPUT_DIR",
+    "OLLAMA_NUM_THREAD": "OLLAMA_NUM_THREAD",
+    "OLLAMA_KEEP_ALIVE": "OLLAMA_KEEP_ALIVE",
+    "LLM_TIMEOUT": "AUTOEDA_LLM_TIMEOUT",
+    "LLM_BATCH": "AUTOEDA_LLM_BATCH",
+    "LLM_MAX_COLUMNS": "AUTOEDA_LLM_MAX_COLUMNS",
+    "DUCKDB_MEMORY_LIMIT": "AUTOEDA_MEMORY_LIMIT",
+    "DUCKDB_THREADS": "AUTOEDA_THREADS",
+    "SAMPLE_ROWS": "AUTOEDA_SAMPLE_ROWS",
+    "HUGE_ROWS": "AUTOEDA_HUGE_ROWS",
+    "ENGINE": "AUTOEDA_ENGINE",
+    "SPARK_MASTER": "AUTOEDA_SPARK_MASTER",
+    "SPARK_CONF": "AUTOEDA_SPARK_CONF",
+    "SPARK_UI_URL": "AUTOEDA_SPARK_UI",
+    "SPARK_WORK_DIR": "AUTOEDA_SPARK_WORK_DIR",
+    "HDFS_URL": "AUTOEDA_HDFS_URL",
+    "HDFS_USER": "AUTOEDA_HDFS_USER",
+    "HDFS_ROOT": "AUTOEDA_HDFS_ROOT",
+    "MAX_CONCURRENT_JOBS": "AUTOEDA_MAX_JOBS",
+    "OCR_LANG": "AUTOEDA_OCR_LANG",
+}
+
 
 def _path():
     return config.DATA_DIR / "settings.json"
@@ -162,6 +199,28 @@ def saved() -> dict:
 
 def values() -> dict:
     return {k: getattr(config, k) for k in _KEYS}
+
+
+def sources() -> dict[str, str]:
+    """Where each value comes from, so a change that \"doesn't work\" can be explained:
+
+    * \"settings\"  - the key was saved on the Settings page (settings.json) and overrides the env / default.
+    * \"env\"       - not saved; config.py read a non-default value from the environment.
+    * \"default\"   - not saved and no env override: the built-in default in config.py.
+
+    Precedence: settings.json > env var > built-in default. Saving a value equal to the default removes
+    the settings.json entry (falls back to env/default); only a different value is stored.
+    """
+    overridden = saved()
+    out = {}
+    for k in _KEYS:
+        if k in overridden:
+            out[k] = "settings"
+        elif config.OS_ENV.get(_ENV_NAME.get(k, k)) not in (None, ""):
+            out[k] = "env"
+        else:
+            out[k] = "default"
+    return out
 
 
 def apply():
@@ -224,7 +283,8 @@ def reset() -> dict:
 def describe(lang: str = "en") -> list[dict]:
     i = 0 if lang == "en" else 1
     cur = values()
+    src = sources()
     return [{"key": s["key"], "type": s["type"], "group": s["group"], "group_label": GROUPS[s["group"]][i],
              "label": s["label"][i], "help": s["help"][i], "choices": s.get("choices"), "min": s.get("min"),
              "max": s.get("max"), "restart": s.get("restart", False), "value": cur[s["key"]],
-             "default": DEFAULTS[s["key"]]} for s in SCHEMA]
+             "source": src[s["key"]], "default": DEFAULTS[s["key"]]} for s in SCHEMA]

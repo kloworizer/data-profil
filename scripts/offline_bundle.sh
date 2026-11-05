@@ -38,9 +38,10 @@ WITH_DOCLING=${WITH_DOCLING:-1}
 mkdir -p "$OUT"
 OUT_ABS=$(cd "$OUT" && { pwd -W 2>/dev/null || pwd; })   # pwd -W: Windows path for Docker Desktop
 
+BUILD_STAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 echo "==> Building $TAG (Spark + OCR, Docling=$WITH_DOCLING)"
 docker build --build-arg WITH_SPARK=1 --build-arg WITH_OCR=1 --build-arg WITH_DOCLING="$WITH_DOCLING" \
-  --build-arg PYSPARK_VERSION="$PYSPARK_VERSION" -t "$TAG" .
+  --build-arg PYSPARK_VERSION="$PYSPARK_VERSION" --build-arg BUILD="$BUILD_STAMP" -t "$TAG" .
 
 echo "==> Saving app image"
 docker save "$TAG" | gzip > "$OUT/app_image.tar.gz"
@@ -106,9 +107,10 @@ else
 fi
 
 cp docker-compose.yml docker-compose.prod.yml "$OUT/"
-cp scripts/install_offline.sh "$OUT/"
-printf 'TAG=%s\nOLLAMA_IMAGE=%s\nMODELS="%s"\nPYSPARK_VERSION=%s\nBUILT=%s\n' \
-  "$TAG" "$OLLAMA_IMAGE" "$MODELS" "$PYSPARK_VERSION" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$OUT/bundle.env"
+cp scripts/install_offline.sh scripts/docker-compose "$OUT/"
+printf 'TAG=%s\nOLLAMA_IMAGE=%s\nMODELS="%s"\nPYSPARK_VERSION=%s\nBUILT=%s\nAPP_IMAGE_ID=%s\n' \
+  "$TAG" "$OLLAMA_IMAGE" "$MODELS" "$PYSPARK_VERSION" "$BUILD_STAMP" \
+  "$(docker image inspect --format '{{.Id}}' "$TAG")" > "$OUT/bundle.env"
 (cd "$OUT" && sha256sum ./*.tar.gz ./*.tgz 2>/dev/null > SHA256SUMS || true)
 echo "==> Bundle ready in $OUT:"
 ls -lh "$OUT"

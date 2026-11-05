@@ -14,6 +14,16 @@ SYSTEM = ("You are a senior data analyst writing an exploratory data analysis re
           "Be factual and concise. Only use the statistics given; do not invent numbers.")
 
 
+def _options(**extra) -> dict:
+    """Ollama model options. num_thread/keep_alive are read from the settings (and env) so every
+    call from the app uses them - OLLAMA_NUM_THREADS alone is not honoured by llama-server in
+    current Ollama versions, and a single request without the option reloads the model."""
+    opts = {**extra}
+    if config.OLLAMA_NUM_THREAD:
+        opts["num_thread"] = config.OLLAMA_NUM_THREAD
+    return opts
+
+
 class Ollama:
     def __init__(self, model: str | None = None, host: str | None = None):
         self.model = model or config.OLLAMA_MODEL
@@ -50,8 +60,10 @@ class Ollama:
         body = {
             "model": self.model, "stream": False,
             "messages": [{"role": "system", "content": f"{SYSTEM}\n\n{self.lessons}" if self.lessons else SYSTEM}, user],
-            "options": {"temperature": temperature, "num_ctx": 8192},
+            "options": _options(temperature=temperature, num_ctx=8192),
         }
+        if config.OLLAMA_KEEP_ALIVE:
+            body["keep_alive"] = config.OLLAMA_KEEP_ALIVE
         if as_json:
             body["format"] = "json"
         if self._think_ok:

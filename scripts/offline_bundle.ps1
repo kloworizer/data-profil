@@ -336,6 +336,8 @@ $dockerfileLines = @(
 # form is only for -v volume mounts.
 $dockerfileArg = $dockerfile
 $isWindowsHost = ($env:OS -eq "Windows_NT")
+# one timestamp for the image's /health "build" field and bundle.env BUILT
+$BuildStamp = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
 
 Step "Building $TAG for $Platform (Spark + OCR, Docling=$WithDocling, pip timeout ${PipTimeoutValue}s)"
 try {
@@ -348,6 +350,7 @@ try {
         "--build-arg", "WITH_DOCLING=$WithDocling",
         "--build-arg", "PYSPARK_VERSION=$PySparkVersion",
         "--build-arg", "PIP_TIMEOUT=$PipTimeoutValue",
+        "--build-arg", "BUILD=$BuildStamp",
         "--load", "-t", "autoeda-build:local", "."
     )
     if ($isWindowsHost) {
@@ -355,6 +358,7 @@ try {
         Invoke-Native docker @(
             "buildx", "build",
             "--platform", $Platform,
+            "--build-arg", "BUILD=$BuildStamp",
             "--load", "-t", $TAG, "-f", $dockerfileArg, "."
         )
     }
@@ -493,6 +497,8 @@ else {
 Copy-Item -LiteralPath "docker-compose.yml" -Destination $OutPath -Force
 Copy-Item -LiteralPath "docker-compose.prod.yml" -Destination $OutPath -Force
 Copy-Item -LiteralPath (Join-Path "scripts" "install_offline.sh") -Destination $OutPath -Force
+# picks the compose file the running project was started with, for plain `docker compose`
+Copy-Item -LiteralPath (Join-Path "scripts" "docker-compose") -Destination $OutPath -Force
 
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 # These two files are consumed by bash on Linux (`source ./bundle.env`, `sha256sum -c`), so they must
@@ -508,7 +514,8 @@ $envLines = @(
     "OLLAMA_IMAGE=$OllamaImage",
     "MODELS=`"$Models`"",
     "PYSPARK_VERSION=$PySparkVersion",
-    "BUILT=$([DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ'))"
+    "BUILT=$BuildStamp",
+    "APP_IMAGE_ID=$imageId"   # what install_offline.sh loaded: compare with /health on the server
 )
 Write-UnixTextFile -Path (Join-Path $OutPath "bundle.env") -Lines $envLines
 

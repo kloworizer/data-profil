@@ -26,6 +26,19 @@ for f in app_image.tar.gz ollama_image.tar.gz; do
   if [ -f "$f" ] && sent "$f"; then echo "==> Loading $f"; $SUDO docker load -i "$f"; fi
 done
 
+# bundle.env records the image id that was packaged. If the loaded image differs, this folder is not
+# the bundle it claims to be (e.g. an older file kept in place after copying only some files) - the
+# usual cause of "the update did nothing".
+if sent app_image.tar.gz; then
+  LOADED=$($SUDO docker image inspect --format '{{.Id}}' "${TAG:-autoeda:poc}" 2>/dev/null || true)
+  if [ -n "${APP_IMAGE_ID:-}" ] && [ -n "$LOADED" ] && [ "$LOADED" != "$APP_IMAGE_ID" ]; then
+    echo "WARNING: app image $TAG is $LOADED but bundle.env says $APP_IMAGE_ID (built ${BUILT:-?})." >&2
+    echo "         The bundle folder is inconsistent; copy the whole bundle again." >&2
+  elif [ -n "$LOADED" ]; then
+    echo "    app image $TAG = ${LOADED:7:12} (built ${BUILT:-?})"
+  fi
+fi
+
 # 'docker load' untags the image it replaces (e.g. "renaming the old one ... to empty string"),
 # which leaves a <none>:<none> image on disk. Remove those, but only the ones no container uses
 # (a running container keeps its image alive anyway; this just reclaims disk).
@@ -74,6 +87,16 @@ EOF
 fi
 
 mkdir -p data input   # the containers fix ownership of data/ themselves
+
+# `docker compose` in this folder must not pick the wrong file silently (it reads docker-compose.yml,
+# or docker-compose.override.yml -> "stat ...: no such file or directory"). The bundle's
+# docker-compose wrapper asks compose which file the running project uses; symlink it as the default.
+if [ -f ./docker-compose ] && [ ! -L ./docker-compose ] && [ ! -L ./.docker-compose ]; then
+  chmod +x ./docker-compose 2>/dev/null || true
+  chmod +x ./install_offline.sh 2>/dev/null || true
+  ln -s docker-compose ./.docker-compose 2>/dev/null || true
+  echo "==> Compose wrapper installed: plain 'docker compose' now follows $COMPOSE"
+fi
 
 # The app asks Ollama for OLLAMA_MODEL from the compose file. If the bundle only carries a different
 # model (e.g. qwen3.5:2b while the compose file wants qwen3.5:35b-a3b), every AI step fails at runtime

@@ -145,6 +145,26 @@ The bundle contains only the listed models, not everything in the model folder.
 Manual alternative (USB or a transfer zone): `scripts/offline_bundle.sh offline_bundle`, copy the folder,
 then on the server run `./install_offline.sh [docker-compose.prod.yml]`.
 
+The bundle also ships a `docker-compose` wrapper (installed as the bundle folder's default compose
+file by `install_offline.sh`). After an install, plain `docker compose ps` / `exec` in that folder uses
+the same file the running project was started with instead of guessing between the two compose files;
+`-f` / `COMPOSE_FILE` still override it. `docker compose ls -a` shows the file in use.
+
+Ollama on the production hosts:
+* **Threads:** current Ollama runs `llama-server`, which starts one thread per logical core it sees
+  (72 on these hosts) and **ignores `OLLAMA_NUM_THREADS`**; on a 2-socket CPU those threads straddle
+  both sockets and run slower. The app therefore sends the model option `num_thread` with every
+  request, from `OLLAMA_NUM_THREAD` (prod file: 18 = the physical cores of one Xeon Gold 6140); it
+  is also on *Settings → CPU threads per AI call*. `OLLAMA_NUM_THREADS` is kept only for direct
+  `ollama run` use. Check what was used: `docker compose logs ollama | grep n_threads`.
+* `OLLAMA_LOAD_TIMEOUT: 15m`: the 22 GB model takes minutes to load on CPU. `ollama run` and `curl`
+  clients give up earlier and abort the load (`client connection closed before llama-server finished
+  loading`), so for the very first (cold) load use a long `curl --max-time 1800` or start a job and let
+  it finish; afterwards `OLLAMA_KEEP_ALIVE: 4h` (also sent per request) keeps the model resident.
+* `OLLAMA_NO_CLOUD: "1"` stops the `ollama.com` recommendation lookups that time out on an
+  air-gapped host.* `cpuset` in the ollama service only *reinforces* the thread limit and needs cgroup v2 (modern
+  kernels). On a host without it Docker refuses the container (`cannot set cpuset: no cgroup v2
+  support`); comment the line out — `OLLAMA_NUM_THREAD`/`num_thread` still limits the threads.
 Spark: set `PYSPARK_VERSION` to the cluster's Spark version when building. Executors only need
 Python 3.12. Simplest is to run the same image as the Spark workers (see the commented service in
 `docker-compose.prod.yml`). The image trusts the root CAs in `certs/` (on this PoC laptop, Avast's);
@@ -224,6 +244,8 @@ production), noticeably more reliable than the 2B PoC model.
 | `AUTOEDA_NATIVE_PARSE_MIN_BYTES` | `1 GiB` | dirty text files above this use the native reader |
 | `AUTOEDA_MAX_JOBS` | `1` | concurrent jobs |
 | `OLLAMA_HOST` / `OLLAMA_MODEL` | `http://localhost:11434` / `qwen3.5:2b` | LLM endpoint / model |
+| `OLLAMA_NUM_THREAD` | `0` | threads per AI call, sent as the Ollama option `num_thread` (0 = automatic); on a multi-socket CPU use one socket's physical cores |
+| `OLLAMA_KEEP_ALIVE` | Ollama's default | how long the model stays loaded, sent with every request (e.g. `4h`) |
 | `AUTOEDA_LLM_BATCH`, `AUTOEDA_LLM_MAX_COLUMNS`, `AUTOEDA_LLM_TIMEOUT` | 5, 80, 180 | LLM batching / limits |
 | `AUTOEDA_SPARK_MASTER`, `AUTOEDA_SPARK_CONF`, `AUTOEDA_SPARK_WORK_DIR` | `local[*]` | Spark connection, `k=v;k=v` conf, shared work dir (also on the Settings page) |
 | `AUTOEDA_SPARK_UI` | from the master | cluster web UI / REST address the resources are read from (YARN: ResourceManager `:8088`) |

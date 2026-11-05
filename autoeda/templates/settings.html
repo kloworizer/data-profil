@@ -21,6 +21,7 @@ addT({
   en: { title: 'Settings', sub: 'Applies to every new analysis on this server', save: 'Save', reset: 'Reset to defaults',
     saved: 'Saved. New analyses use these settings.', failed: 'Not saved: ', confirm_t: 'Reset all settings?', confirm: 'Put every setting back to its default?',
     changed: 'changed', restart: ' (needs a restart)', unsaved: 'Unsaved changes.',
+    src_env: 'from env', src_settings: 'saved', src_default: 'default',
     sp_title: 'Cluster now', sp_check: 'Check again', sp_local: 'Local mode on this server: {c} CPU cores. Set the master to use an existing cluster.',
     sp_ok: 'Connected to the cluster manager', sp_bad: 'Cannot reach the cluster manager', sp_noui: 'Resources unknown: set the web UI address below.',
     sp_workers: 'Workers', sp_cores: 'Cores (used / total)', sp_mem: 'Memory (used / total)', sp_apps: 'Running apps',
@@ -29,6 +30,7 @@ addT({
   id: { title: 'Pengaturan', sub: 'Berlaku untuk setiap analisis baru di server ini', save: 'Simpan', reset: 'Kembalikan bawaan',
     saved: 'Tersimpan. Analisis baru memakai pengaturan ini.', failed: 'Tidak tersimpan: ', confirm_t: 'Kembalikan semua pengaturan?', confirm: 'Kembalikan semua pengaturan ke bawaan?',
     changed: 'diubah', restart: ' (perlu dijalankan ulang)', unsaved: 'Ada perubahan yang belum disimpan.',
+    src_env: 'dari env', src_settings: 'tersimpan', src_default: 'bawaan',
     sp_title: 'Klaster saat ini', sp_check: 'Periksa lagi', sp_local: 'Mode lokal di server ini: {c} core CPU. Isi master untuk memakai klaster yang sudah ada.',
     sp_ok: 'Terhubung ke pengelola klaster', sp_bad: 'Pengelola klaster tidak dapat dijangkau', sp_noui: 'Sumber daya tidak diketahui: isi alamat web UI di bawah.',
     sp_workers: 'Worker', sp_cores: 'Core (terpakai / total)', sp_mem: 'Memori (terpakai / total)', sp_apps: 'Aplikasi berjalan',
@@ -70,6 +72,8 @@ function render() {
       var b = el('label', { 'for': 'f-' + s.key, 'class': 'has-text-weight-semibold' }, s.label);
       lbl.appendChild(b);
       if (String(s.value) !== String(s.default)) lbl.appendChild(el('span', { 'class': 'tag is-link is-light ml-2' }, t('changed')));
+      var srcKey = 'src_' + (s.source || 'default');
+      lbl.appendChild(el('span', { 'class': 'tag is-light ml-2', title: 'source' }, t(srcKey)));
       if (s.help || s.restart) lbl.appendChild(el('p', { 'class': 'sub' }, (s.help || '') + (s.restart && !s.help ? t('restart') : '')));
       ctl.appendChild(control(s)); row.appendChild(lbl); row.appendChild(ctl); card.appendChild(row);
     });

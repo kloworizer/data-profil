@@ -24,7 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pydantic import BaseModel
 
-from . import __version__, auth, cancel, config
+from . import __version__, auth, build_info, cancel, config
 from .cancel import CancelToken, Cancelled
 from .llm import Ollama
 
@@ -775,4 +775,5 @@ def get_config():
 
 @app.get("/health")
 def health():
-    return JSONResponse({"ok": True, "version": __version__})
+    return JSONResponse({"ok": True, "version": __version__, "build": build_info(),
+                         "settings": settings.sources()})

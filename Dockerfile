@@ -56,6 +56,13 @@ COPY docker/entrypoint.sh /entrypoint.sh
 RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh && \
     useradd -m -u 1000 app && mkdir -p /data /input && chown -R app /data /input
 
+# Build stamp shown by /health ("build"): after `COPY autoeda`, so the layer cache still reuses the
+# code layers, and before the image is tagged. Makes it obvious whether an air-gapped server really
+# runs the newly installed bundle or the previous image.
+ARG BUILD="unknown"
+RUN printf '%s %s\n' "$BUILD" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > /app/.build-info && \
+    chown app:app /app/.build-info
+
 # The entrypoint starts as root only to fix /data ownership, then runs everything as `app`.
 VOLUME ["/data", "/input"]
 EXPOSE 8000

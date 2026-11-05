@@ -44,6 +44,9 @@ services:
       AUTOEDA_THREADS: "4"
       OLLAMA_HOST: ${OLLAMA_HOST:-http://ollama:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3.5:2b}   # laptop-sized; the production servers use qwen3.5:35b-a3b
+      # Threads per inference call (Ollama model option num_thread; OLLAMA_NUM_THREADS is ignored by
+      # current llama-server). 0 or unset = automatic. On a 72-core host use one socket's cores.
+      OLLAMA_NUM_THREAD: ${OLLAMA_NUM_THREAD:-0}
       AUTOEDA_SPARK_MASTER: spark://spark-master:7077
       AUTOEDA_SPARK_WORK_DIR: file:///data/spark_work
       AUTOEDA_SPARK_CONF: >-
@@ -82,10 +85,19 @@ services:
 
   ollama:
     image: ollama/ollama:latest   # pin a tag for reproducible deployments
-    # CPU-only inference: bound the threads (see docker-compose.prod.yml for the long explanation)
-    cpuset: "${OLLAMA_CPUSET:-0-7}"
+    # CPU-only inference: bound the threads (see docker-compose.prod.yml for the long explanation).
+    # This file also ends up on 72-core production hosts now and then; there the laptop values make a
+    # 35B model load at a crawl. Both are overridable without editing the file:
+    #   OLLAMA_NUM_THREADS=12 OLLAMA_CPUSET= docker compose up -d ollama
+    # (empty OLLAMA_CPUSET = no limit; cpuset also needs cgroup v2 - see the prod file).
+    cpuset: "${OLLAMA_CPUSET-0-7}"
     environment:
+      # Only a default for direct `ollama run`: current Ollama ignores it for inference threads.
+      # The app limits threads per request with OLLAMA_NUM_THREAD (see the autoeda service).
       OLLAMA_NUM_THREADS: "${OLLAMA_NUM_THREADS:-4}"
+      # A 35B model on CPU needs minutes to load: do not abort it with a client timeout.
+      OLLAMA_LOAD_TIMEOUT: "${OLLAMA_LOAD_TIMEOUT:-15m}"
+      OLLAMA_NO_CLOUD: "1"            # no ollama.com lookups (air-gapped / offline installs)
     volumes:
       - ollama:/root/.ollama
     restart: unless-stopped

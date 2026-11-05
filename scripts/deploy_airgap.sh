@@ -71,8 +71,10 @@ fi
 [ -f "$BUNDLE/app_image.tar.gz" ] || { echo "ERROR: $BUNDLE/app_image.tar.gz not found"; exit 1; }
 # always ship the current installer and compose files (also with --skip-build)
 cp scripts/install_offline.sh docker-compose.yml docker-compose.prod.yml "$BUNDLE/"
+# `docker compose` without -f follows the wrapper (it reuses the file the project is running with)
+cp scripts/docker-compose "$BUNDLE/docker-compose"
 
-FILES=("$BUNDLE/app_image.tar.gz" "$BUNDLE/bundle.env" "$BUNDLE/install_offline.sh" "$BUNDLE/docker-compose.yml" "$BUNDLE/docker-compose.prod.yml")
+FILES=("$BUNDLE/app_image.tar.gz" "$BUNDLE/bundle.env" "$BUNDLE/install_offline.sh" "$BUNDLE/docker-compose.yml" "$BUNDLE/docker-compose.prod.yml" "$BUNDLE/docker-compose")
 if [ "$APP_ONLY" != "1" ]; then
   for f in ollama_image.tar.gz ollama_models.tgz; do
     [ -f "$BUNDLE/$f" ] || { echo "ERROR: $BUNDLE/$f missing (build without APP_ONLY first)"; exit 1; }
@@ -92,7 +94,8 @@ else
 fi
 
 step "4/5 Installing on the server"
-rsh "cd $REMOTE_DIR && chmod +x install_offline.sh && sed -i 's/\r\$//' install_offline.sh && SUDO=$SUDO ./install_offline.sh $COMPOSE"
+# the wrapper is copied from Windows too: strip CR, or bash fails on every line it runs
+rsh "cd $REMOTE_DIR && chmod +x install_offline.sh docker-compose && sed -i 's/\r\$//' install_offline.sh docker-compose && SUDO=$SUDO ./install_offline.sh $COMPOSE"
 
 step "5/5 Health check"
 WEB_PORT=$(rsh "cd $REMOTE_DIR && $SUDO docker compose -f $COMPOSE config 2>/dev/null | sed -n 's/.*AUTOEDA_PORT: *\"\\{0,1\\}\\([0-9]\\{1,5\\}\\)\"\\{0,1\\}.*/\\1/p' | head -n1")
