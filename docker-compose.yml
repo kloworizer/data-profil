@@ -44,6 +44,9 @@ services:
       AUTOEDA_THREADS: "4"
       OLLAMA_HOST: ${OLLAMA_HOST:-http://ollama:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3.5:2b}   # laptop-sized; the production servers use qwen3.5:35b-a3b
+      # Thinking models: 0 = send think=false, use only the final answer (faster, shorter). 1 = let
+      # the model reason first (slower, more tokens). Also on Settings -> Let the model reason.
+      AUTOEDA_LLM_REASONING: ${AUTOEDA_LLM_REASONING:-0}
       # Threads per inference call (Ollama model option num_thread; OLLAMA_NUM_THREADS is ignored by
       # current llama-server). 0 or unset = automatic. On a 72-core host use one socket's cores.
       OLLAMA_NUM_THREAD: ${OLLAMA_NUM_THREAD:-0}

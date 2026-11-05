@@ -1,0 +1,13 @@
+# Custom Ollama model used by AutoEDA: a bundled model plus a fixed system prompt.
+#
+# The parents are filled in by scripts/create_model.sh, which runs `ollama create` inside the
+# ollama service (the offline installer calls it after preloading the models; nothing is
+# downloaded). It detects the bundled names (base:qwen35_35b:latest, base:qwen35_2b:latest) or,
+# for a locally pulled Ollama, qwen3.5:35b-a3b and qwen3.5:2b. Re-run it after editing this file.
+FROM __PARENTS__
+
+# Applied to every request of the model: no hidden reasoning in the answer, only the final text.
+SYSTEM """You are a helpful, direct AI assistant. Do not output internal thinking, reasoning steps, or <think> tags. Output only the final response directly."""
+
+# Default cap on generated tokens for clients that do not set one (the app sends its own options).
+PARAMETER num_predict 512

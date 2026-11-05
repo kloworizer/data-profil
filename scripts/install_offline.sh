@@ -74,6 +74,17 @@ if [ -f ollama_models.tgz ] && sent ollama_models.tgz; then
     -c "mkdir -p /v/models && tar xzf /b/ollama_models.tgz -C /v/models"
 fi
 
+# The model the app is told to use (OLLAMA_MODEL / docker/Modelfile) carries the system prompt and
+# num_predict; it is created from the preloaded parents. No network needed.
+if [ -f docker/Modelfile ]; then
+  echo "==> Creating the Ollama model from docker/Modelfile"
+  # the ollama container must be up to run `ollama create` in it
+  $SUDO docker compose -f "$COMPOSE" up -d ollama >/dev/null 2>&1 || true
+  chmod +x scripts/create_model.sh 2>/dev/null || true
+  SUDO=$SUDO ./scripts/create_model.sh "$COMPOSE" || \
+    echo "WARNING: model not created; after the stack is up run: ./scripts/create_model.sh $COMPOSE" >&2
+fi
+
 # An air-gapped server cannot pull. If the compose file references an image that is not loaded,
 # compose waits ~16 s and then fails with "Get https://registry-1.docker.io/v2/: ... timeout".
 # Check the image names in the compose file up front and stop with a clear hint instead.

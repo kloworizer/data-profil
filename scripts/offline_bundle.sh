@@ -55,7 +55,10 @@ if [ "$APP_ONLY" != "1" ]; then
   # docker-compose.prod.yml tells the app which model to call. Bundling only other models produces a
   # bundle that installs fine and then fails every AI step on the air-gapped server.
   COMPOSE_MODEL=$(sed -n 's/^[[:space:]]*OLLAMA_MODEL:[[:space:]]*//p' docker-compose.prod.yml | head -n1)
-  if [ -n "$COMPOSE_MODEL" ]; then
+  # A model created from docker/Modelfile (scripts/create_model.sh) is not pulled: the bundle
+  # creates it on the target from the parents below. Any other name is a parent.
+  CREATED_MODEL=$(sed -n 's/.*MODEL_NAME:-\([^}]*\)}.*/\1/p' scripts/create_model.sh | head -n1)
+  if [ -n "$COMPOSE_MODEL" ] && [ "$COMPOSE_MODEL" != "$CREATED_MODEL" ]; then
     case " $MODELS " in
       *" $COMPOSE_MODEL "*) ;;
       *) echo "WARNING: docker-compose.prod.yml sets OLLAMA_MODEL=$COMPOSE_MODEL but the bundle gets: $MODELS" >&2
@@ -76,8 +79,14 @@ if [ "$APP_ONLY" != "1" ]; then
       name=${m%%:*}; tag=${m#*:}; [ "$tag" = "$m" ] && tag=latest
       case "$name" in */*) ;; *) name="library/$name" ;; esac
       man="manifests/registry.ollama.ai/$name/$tag"
+      # A model present under the bundle's own registry prefix ("base:qwen35_35b", produced by
+      # re-importing into the Ollama volume) is found by its manifest name; a plainly pulled one
+      # ("qwen3.5:35b-a3b") by the manifest above (library/qwen3.5/35b-a3b).
       if [ ! -f "$OLLAMA_MODELS_DIR/$man" ]; then
-        echo "ERROR: model $m is not in $OLLAMA_MODELS_DIR (run: ollama pull $m)" >&2; exit 1
+        pre=$(find "$OLLAMA_MODELS_DIR/manifests" -type f -path "*$name*" 2>/dev/null | head -n1)
+        if [ -n "$pre" ]; then man=${pre#"$OLLAMA_MODELS_DIR/"}; else
+          echo "ERROR: model $m is not in $OLLAMA_MODELS_DIR (run: ollama pull $m)" >&2; exit 1
+        fi
       fi
       echo "    $m -> $man"
       echo "$man" >> "$OUT/.model_files"
@@ -107,7 +116,10 @@ else
 fi
 
 cp docker-compose.yml docker-compose.prod.yml "$OUT/"
-cp scripts/install_offline.sh scripts/docker-compose "$OUT/"
+# install_offline.sh runs from the bundle root and uses paths relative to it: everything flat there,
+# and docker/Modelfile in docker/ next to it (read by create_model.sh).
+cp scripts/install_offline.sh scripts/docker-compose scripts/create_model.sh "$OUT/"
+mkdir -p "$OUT/docker" && cp docker/Modelfile "$OUT/docker/"
 printf 'TAG=%s\nOLLAMA_IMAGE=%s\nMODELS="%s"\nPYSPARK_VERSION=%s\nBUILT=%s\nAPP_IMAGE_ID=%s\n' \
   "$TAG" "$OLLAMA_IMAGE" "$MODELS" "$PYSPARK_VERSION" "$BUILD_STAMP" \
   "$(docker image inspect --format '{{.Id}}' "$TAG")" > "$OUT/bundle.env"

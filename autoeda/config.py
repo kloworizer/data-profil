@@ -34,6 +34,9 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:2b")
 OLLAMA_NUM_THREAD: int = _int("OLLAMA_NUM_THREAD", 0)
 # Keep the model resident between jobs (Ollama duration string: 4h, -1 = forever). Empty = Ollama default.
 OLLAMA_KEEP_ALIVE: str = os.getenv("OLLAMA_KEEP_ALIVE", "")
+# Thinking models: off = send think=false and use only the final answer (much faster, less output);
+# on = let the model reason first. docker/Modelfile says the same in its system prompt, as a guard.
+LLM_REASONING = _on("AUTOEDA_LLM_REASONING", False)
 LLM_TIMEOUT = _int("AUTOEDA_LLM_TIMEOUT", 180)
 LLM_BATCH = _int("AUTOEDA_LLM_BATCH", 5)            # columns per LLM call
 LLM_MAX_COLUMNS = _int("AUTOEDA_LLM_MAX_COLUMNS", 80)  # beyond this, rule-based text only

@@ -66,7 +66,7 @@ class Ollama:
             body["keep_alive"] = config.OLLAMA_KEEP_ALIVE
         if as_json:
             body["format"] = "json"
-        if self._think_ok:
+        if self._think_ok and not config.LLM_REASONING:
             body["think"] = False   # skip hidden reasoning on thinking models: much faster
         cancel.check()
         try:

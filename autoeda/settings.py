@@ -68,6 +68,12 @@ SCHEMA = [
      "label": ("Keep the model loaded (e.g. 4h)", "Tahan model di memori (mis. 4h)"),
      "help": ("Reloading a 22 GB model takes minutes; empty = Ollama's own default (5m).",
               "Memuat ulang model 22 GB butuh menit; kosong = bawaan Ollama (5m).")},
+    {"key": "LLM_REASONING", "type": "bool", "group": "ai",
+     "label": ("Let the model reason before answering", "Izinkan model bernalar sebelum menjawab"),
+     "help": ("Off: thinking models get think=false and only the final answer is used (faster, "
+              "shorter). On: the model may think first (slower, more tokens).",
+              "Mati: model thinking diberi think=false dan hanya jawaban akhir dipakai (lebih "
+              "cepat). Nyala: model boleh berpikir dulu (lebih lambat, token lebih banyak).")},
     {"key": "LLM_TIMEOUT", "type": "int", "group": "ai", "min": 10, "max": 3600,
      "label": ("AI answer timeout (seconds)", "Batas waktu jawaban AI (detik)"), "help": ("", "")},
     {"key": "LLM_BATCH", "type": "int", "group": "ai", "min": 1, "max": 50,
@@ -166,6 +172,7 @@ _ENV_NAME = {
     "INPUT_DIR": "AUTOEDA_INPUT_DIR",
     "OLLAMA_NUM_THREAD": "OLLAMA_NUM_THREAD",
     "OLLAMA_KEEP_ALIVE": "OLLAMA_KEEP_ALIVE",
+    "LLM_REASONING": "AUTOEDA_LLM_REASONING",
     "LLM_TIMEOUT": "AUTOEDA_LLM_TIMEOUT",
     "LLM_BATCH": "AUTOEDA_LLM_BATCH",
     "LLM_MAX_COLUMNS": "AUTOEDA_LLM_MAX_COLUMNS",

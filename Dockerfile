@@ -63,6 +63,18 @@ ARG BUILD="unknown"
 RUN printf '%s %s\n' "$BUILD" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > /app/.build-info && \
     chown app:app /app/.build-info
 
+# --- Ollama model with a fixed system prompt (docker/Modelfile) --------------------------------
+# The build only sanity-checks the Modelfile; it does not talk to Ollama, because during a build
+# nothing else runs yet (Compose starts the containers only after the image exists). The model is
+# created afterwards by scripts/create_model.sh, run by install_offline.sh on the target or by
+# hand:  ./scripts/create_model.sh [compose-file]  (name: autoeda-llm).
+# Keep OLLAMA_MODEL on the autoeda service in sync with that name.
+ARG OLLAMA_MODEL_NAME=autoeda-llm
+COPY docker/Modelfile ./docker/Modelfile
+RUN test -s docker/Modelfile && grep -q '^SYSTEM' docker/Modelfile && \
+    printf "Ollama model '%s' from docker/Modelfile is created after installation (scripts/create_model.sh).\n" \
+      "${OLLAMA_MODEL_NAME}" > docker/MODEL.txt
+
 # The entrypoint starts as root only to fix /data ownership, then runs everything as `app`.
 VOLUME ["/data", "/input"]
 EXPOSE 8000

@@ -142,6 +142,19 @@ Not chosen: `qwen3.5:27b` (dense, every parameter used per token: about 9× slow
 `MODELS="…" scripts/offline_bundle.sh` and the default with `OLLAMA_MODEL` in `docker-compose.prod.yml`.
 The bundle contains only the listed models, not everything in the model folder.
 
+**System prompt / output length.** `docker/Modelfile` defines `autoeda-llm`: a bundled model plus the
+system prompt *"You are a helpful, direct AI assistant. Do not output internal thinking, reasoning steps,
+or `<think>` tags. Output only the final response directly."* and `num_predict 512`. `install_offline.sh`
+creates it on the server with `scripts/create_model.sh [compose-file]` (also the way to recreate it after
+editing the Modelfile; nothing is downloaded — this cannot happen during the image build, when no
+container is running yet). `docker-compose.prod.yml` sets `OLLAMA_MODEL: autoeda-llm`; the local
+`docker-compose.yml` keeps calling the plain model.
+
+**Reasoning.** The prompt and `think=false` are two separate guards: `AUTOEDA_LLM_REASONING: "0"` in the
+compose files (also *Settings → Let the model reason*; `1` = allow reasoning) sends `think=false` with
+every request, so a thinking model returns only the final answer even when a plain model without the
+Modelfile is selected.
+
 Manual alternative (USB or a transfer zone): `scripts/offline_bundle.sh offline_bundle`, copy the folder,
 then on the server run `./install_offline.sh [docker-compose.prod.yml]`.
 
@@ -246,6 +259,7 @@ production), noticeably more reliable than the 2B PoC model.
 | `OLLAMA_HOST` / `OLLAMA_MODEL` | `http://localhost:11434` / `qwen3.5:2b` | LLM endpoint / model |
 | `OLLAMA_NUM_THREAD` | `0` | threads per AI call, sent as the Ollama option `num_thread` (0 = automatic); on a multi-socket CPU use one socket's physical cores |
 | `OLLAMA_KEEP_ALIVE` | Ollama's default | how long the model stays loaded, sent with every request (e.g. `4h`) |
+| `AUTOEDA_LLM_REASONING` | `0` | `0` = thinking models get `think=false`, only the final answer is used (faster, shorter); `1` = let the model reason first. Also on *Settings → Let the model reason* |
 | `AUTOEDA_LLM_BATCH`, `AUTOEDA_LLM_MAX_COLUMNS`, `AUTOEDA_LLM_TIMEOUT` | 5, 80, 180 | LLM batching / limits |
 | `AUTOEDA_SPARK_MASTER`, `AUTOEDA_SPARK_CONF`, `AUTOEDA_SPARK_WORK_DIR` | `local[*]` | Spark connection, `k=v;k=v` conf, shared work dir (also on the Settings page) |
 | `AUTOEDA_SPARK_UI` | from the master | cluster web UI / REST address the resources are read from (YARN: ResourceManager `:8088`) |
