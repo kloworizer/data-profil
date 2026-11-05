@@ -26,16 +26,32 @@ for f in app_image.tar.gz ollama_image.tar.gz; do
   if [ -f "$f" ] && sent "$f"; then echo "==> Loading $f"; $SUDO docker load -i "$f"; fi
 done
 
-# bundle.env records the image id that was packaged. If the loaded image differs, this folder is not
-# the bundle it claims to be (e.g. an older file kept in place after copying only some files) - the
-# usual cause of "the update did nothing".
-if sent app_image.tar.gz; then
-  LOADED=$($SUDO docker image inspect --format '{{.Id}}' "${TAG:-autoeda:poc}" 2>/dev/null || true)
-  if [ -n "${APP_IMAGE_ID:-}" ] && [ -n "$LOADED" ] && [ "$LOADED" != "$APP_IMAGE_ID" ]; then
-    echo "WARNING: app image $TAG is $LOADED but bundle.env says $APP_IMAGE_ID (built ${BUILT:-?})." >&2
-    echo "         The bundle folder is inconsistent; copy the whole bundle again." >&2
-  elif [ -n "$LOADED" ]; then
-    echo "    app image $TAG = ${LOADED:7:12} (built ${BUILT:-?})"
+# bundle.env records the build stamp that was baked into the image. Compare the stamp from *inside* the
+# loaded image rather than the image id: the same build reports two different ids depending on the
+# host - Docker Desktop (containerd image store) shows the OCI index digest, plain Docker shows the
+# platform image's config digest. The stamp is identical everywhere.
+#
+# A mismatch means this folder mixes files from different builds (e.g. an older app_image.tar.gz next
+# to a newer bundle.env) - the usual cause of "the update did nothing". Stop before starting anything.
+if sent app_image.tar.gz && [ -n "${BUILT:-}" ]; then
+  STAMP=$($SUDO docker run --rm --entrypoint cat "${TAG:-autoeda:poc}" /app/.build-info 2>/dev/null \
+          | awk '{print $1}' || true)
+  if [ -n "$STAMP" ] && [ "$STAMP" != "$BUILT" ]; then
+    cat >&2 <<EOF
+ERROR: the app image in this folder is not the one this bundle was built with.
+         image build stamp: $STAMP
+         bundle.env BUILT:  $BUILT
+
+This folder mixes files from different builds. Copy the complete bundle again - all of
+app_image.tar.gz, bundle.env and SHA256SUMS from the same place:
+    scp app_image.tar.gz bundle.env SHA256SUMS install_offline.sh $COMPOSE <server>:<this folder>/
+Nothing was started; the previous containers are untouched.
+EOF
+    exit 1
+  elif [ -n "$STAMP" ]; then
+    echo "    app image $TAG build $STAMP (matches bundle.env)"
+  else
+    echo "    note: this image has no build stamp (built before BUILT was recorded); cannot verify it."
   fi
 fi
 
