@@ -255,6 +255,7 @@ def _start(job_id: str):
         old.cancel()
     for ext in (".html", ".json"):
         (config.REPORT_DIR / f"{job_id}{ext}").unlink(missing_ok=True)
+    shutil.rmtree(config.REPORT_DIR / f"{job_id}_data", ignore_errors=True)
     _pool.submit(_run_job, job_id, run, token)
 
 
@@ -540,6 +541,7 @@ def delete_job(job_id: str, request: Request):
         raise HTTPException(409, "Job is still running; stop it first")
     for ext in (".html", ".json", ".job.json"):
         (config.REPORT_DIR / f"{job_id}{ext}").unlink(missing_ok=True)
+    shutil.rmtree(config.REPORT_DIR / f"{job_id}_data", ignore_errors=True)
     with _lock:
         _jobs.pop(job_id, None)
     _drop_input(j)
@@ -759,6 +761,31 @@ def report_json(job_id: str, request: Request):
     if not f.exists():
         raise HTTPException(404)
     return FileResponse(f, media_type="application/json")
+
+
+@app.get("/reports/{job_id}/data/{idx}")
+def report_data(job_id: str, idx: int, request: Request, fmt: str = "csv"):
+    """The table as read and normalised (original columns + the extra '(filled)' columns)."""
+    if not re.fullmatch(r"[0-9a-f]{12}", job_id) or fmt not in ("csv", "parquet"):
+        raise HTTPException(404)
+    j = _job(job_id, request)
+    src = config.REPORT_DIR / f"{job_id}_data" / f"table{int(idx)}.parquet"
+    if not src.is_file():
+        raise HTTPException(404, "No exported data for this table")
+    stem = re.sub(r"[^\w.-]+", "_", Path(j.get("file", job_id)).stem)[:60] + f"_table{int(idx) + 1}"
+    if fmt == "parquet":
+        return FileResponse(src, filename=f"{stem}.parquet", content_disposition_type="attachment")
+    from starlette.background import BackgroundTask
+    from .duck import connect, lit
+    out = config.WORK_DIR / f"dl_{uuid.uuid4().hex}.csv"
+    con = connect()
+    try:
+        con.execute("SET preserve_insertion_order=true")
+        con.execute(f"COPY (SELECT * FROM read_parquet({lit(src.as_posix())})) TO {lit(out.as_posix())} (FORMAT csv, HEADER)")
+    finally:
+        con.close()
+    return FileResponse(out, media_type="text/csv", filename=f"{stem}.csv", content_disposition_type="attachment",
+                        background=BackgroundTask(lambda: out.unlink(missing_ok=True)))
 
 
 @app.get("/api/config")

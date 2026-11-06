@@ -36,7 +36,14 @@ SECTION_RE = re.compile(r"(:\s*$|^(region|wilayah|area|kategori|category|group|k
 INVISIBLE_RE = re.compile("[​‌‍﻿­]")
 
 
+class FilledStr(str):
+    """A cell value copied into a merged range (not present in the source cell itself)."""
+    __slots__ = ()
+
+
 def cell_str(v) -> str:
+    if isinstance(v, FilledStr):
+        return v
     if v is None:
         return ""
     if isinstance(v, bool):
@@ -283,21 +290,62 @@ def grid_to_table(rows: Iterable[list], out: Path, name: str, log: RepairLog, so
     if not has_header:
         log.note("No header row detected: generic column names generated.")
     w = len(keep)
-    sec_name = clean_header(header + ["section"])[-1]
+
+    # Columns holding values copied down from a merged range. The original column keeps the
+    # source as it was (blank under the merge: the real "missing"); the normalised copy goes to
+    # an extra "<name> (filled)" column. Needs the whole sheet, so not for streamed sheets.
+    comp_idx: list[int] = []
+    ff_idx: list[int] = []
+    if materialized:
+        hit = set()
+        for r in sample_rows + scan:
+            for j, i in enumerate(keep):
+                if j not in hit and i < len(r) and isinstance(r[i], FilledStr) and r[i].strip():
+                    hit.add(j)
+        # same idea for group labels typed only on the first row of each group (no real merge)
+        ff_idx = _ffill_columns([pick(r) for r in sample_rows + scan], w, hit)
+        comp_idx = sorted(hit | set(ff_idx))
+    ff_set = set(ff_idx)
+    names = clean_header(header + [f"{header[j]} (filled)" for j in comp_idx])
+    comp_names = names[w:]
+    sec_name = clean_header(names + ["section"])[-1]
+    for j, cn in zip(comp_idx, comp_names):
+        if j in ff_set:
+            log.add("ffill_column", None, detail=f"'{header[j]}' -> '{cn}'")
+            log.note("Column '{c}' looks like group labels written once per group: it keeps the original "
+                     "(blank below the label); the labels carried down are in the extra column '{n}'.",
+                     c=header[j], n=cn)
+        else:
+            log.note("Column '{c}' had merged cells: it keeps the original (blank under the merge); the values "
+                     "filled down from the merge are in the extra column '{n}'.", c=header[j], n=cn)
+    last: dict[int, str] = {}
 
     padded = [pick(r) for r in sample_rows]
     classes = learn_classes(padded, w)
     rep = RowRepairer(header, classes, "\t", log)
     from .sink import ParquetSink   # lazy: keeps the header helpers importable without pyarrow
-    sink = ParquetSink(out, header + [sec_name])
+    sink = ParquetSink(out, names + [sec_name])
     state = {"section": None, "used_section": False, "pending": None, "data_rows": 0, "pending_notes": []}
 
     def flush_pending():
         if state["pending"] is not None:
-            row, ln = state["pending"]
+            row, ln, copied = state["pending"]
             state["pending"] = None
-            for fixed in rep.fix(row, ln):
-                sink.write(fixed + [state["section"]])
+            fixed_rows = rep.fix(row, ln)
+            for fixed in fixed_rows:
+                out_row = [str(v) for v in fixed]
+                comp = []
+                for j in comp_idx:
+                    v = out_row[j]
+                    if j in ff_set:                       # carry the last label down
+                        if v.strip():
+                            last[j] = v
+                        else:
+                            v = last.get(j, "")
+                    comp.append(v)
+                if comp_idx and copied and len(fixed_rows) == 1 and fixed == row:   # row not shifted by a repair
+                    out_row = ["" if j in copied else v for j, v in enumerate(out_row)]
+                sink.write(out_row + comp + [state["section"]])
                 state["data_rows"] += 1
             if state["section"] is not None:
                 state["used_section"] = True
@@ -305,6 +353,7 @@ def grid_to_table(rows: Iterable[list], out: Path, name: str, log: RepairLog, so
     def emit(raw: list[str], line_no: int):
         extra = [c for c in raw[max(keep) + 1:] if c.strip()] if keep else []
         row = pick(raw)
+        copied = {j for j, c in enumerate(row) if isinstance(c, FilledStr) and c.strip()} if comp_idx else None
         filled = [(i, c) for i, c in enumerate(row) if c.strip()]
         if not filled and not extra:
             log.counts["empty_row"] += 1
@@ -348,7 +397,7 @@ def grid_to_table(rows: Iterable[list], out: Path, name: str, log: RepairLog, so
             log.add("wrapped_row_merged", line_no, " ⎮ ".join(c for _, c in filled))
             return
         flush_pending()
-        state["pending"] = (row, line_no)
+        state["pending"] = (row, line_no, copied)
 
     for i, r in enumerate(head[body_start:], start=body_start + 1):
         emit(r, i)
@@ -360,11 +409,33 @@ def grid_to_table(rows: Iterable[list], out: Path, name: str, log: RepairLog, so
             emit([cell_str(v) for v in r], i)
     flush_pending()
     n = sink.close()
-    t = Table(name=name, path=out, columns=header + [sec_name], n_rows=n, source=source, repairs=log)
+    t = Table(name=name, path=out, columns=names + [sec_name], n_rows=n, source=source, repairs=log,
+              derived={cn: header[j] for j, cn in zip(comp_idx, comp_names)})
     if not state["used_section"]:
         t.drop_columns = [sec_name]
-        t.columns = header
+        t.columns = names
     return t
+
+
+def _ffill_columns(rows: list[list[str]], w: int, skip: set) -> list[int]:
+    """Left-hand text columns that look like group labels typed once per group: filled on the first
+    row, blank on the rows below, while the other columns of those rows hold values."""
+    body = [r for r in rows if _nn(r) >= 2]
+    if len(body) < 6 or w < 3:
+        return []
+    out = []
+    for j in range(min(w, max(2, w // 2 + 1))):
+        if j in skip:
+            continue
+        vals = [r[j].strip() for r in body]
+        nb = [v for v in vals if v]
+        k, m = len(nb), len(vals) - len(nb)
+        if not vals[0] or k < 2 or m < k or k > 0.5 * len(vals) or any(len(v) > 60 for v in nb):
+            continue
+        if sum(vclass(v) == "T" for v in nb) < 0.8 * k:
+            continue
+        out.append(j)
+    return out
 
 
 def grid_to_tables(grid: list[list], out_dir: Path, base: str, label: str, log: RepairLog, source: dict,

@@ -36,7 +36,9 @@ REPAIR_LABELS = {
     "ocr_page": "Pages read with OCR (scanned images)",
     "columns_realigned": "Columns lined up by position across pages",
     "ai_layout": "Table layout decided with AI help",
+    "ffill_column": "Group labels carried down into an extra column (original kept)",
 }
+MAX_LINES = 30   # row numbers kept per kind of repair
 
 
 def msg(tpl: str, **params) -> dict:
@@ -61,6 +63,7 @@ class RepairLog:
     examples: dict = field(default_factory=dict)
     notes: list = field(default_factory=list)
     ambiguous: list = field(default_factory=list)   # rows where the repair had near-equal options
+    lines: dict = field(default_factory=dict)       # kind -> first source rows it touched
 
     def add_ambiguous(self, line, raw, fields, chosen):
         if len(self.ambiguous) < 40 and raw:
@@ -68,6 +71,10 @@ class RepairLog:
 
     def add(self, kind: str, line=None, before=None, after=None, detail: str | None = None):
         self.counts[kind] += 1
+        if isinstance(line, int):
+            ls = self.lines.setdefault(kind, [])
+            if len(ls) < MAX_LINES:
+                ls.append(line)
         ex = self.examples.setdefault(kind, [])
         if len(ex) < 5:
             ex.append({"line": line, "before": _clip(before), "after": _clip(after), "detail": detail})
@@ -83,7 +90,8 @@ class RepairLog:
         return {
             "total": sum(self.counts.values()),
             "items": [
-                {"kind": k, "label": REPAIR_LABELS.get(k, k), "count": c, "examples": self.examples.get(k, [])}
+                {"kind": k, "label": REPAIR_LABELS.get(k, k), "count": c, "examples": self.examples.get(k, []),
+                 "lines": self.lines.get(k, [])}
                 for k, c in self.counts.most_common()
             ],
             "notes": self.notes,
@@ -102,6 +110,7 @@ class Table:
     source: dict = field(default_factory=dict)
     repairs: RepairLog = field(default_factory=RepairLog)
     type_hints: dict = field(default_factory=dict)    # column -> text | identifier | category (memory)
+    derived: dict = field(default_factory=dict)       # added column -> source column it normalises (e.g. merged-cell fill)
 
 
 def clean_header(names: list, width: int | None = None) -> list[str]:

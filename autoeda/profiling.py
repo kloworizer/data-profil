@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import datetime as dt
 import decimal
+import contextlib
 import math
 import re
 
@@ -110,6 +111,7 @@ class TableProfiler:
             "repairs": t.repairs.to_dict(), "columns": profiles,
             "duplicates": self._duplicates(cols) if config.EDA_DUPLICATES else None,
             "correlations": self._correlations(profiles) if config.EDA_MULTIVARIATE else [],
+            "missing_patterns": self._missing_patterns(cols),
         }
         total_cells = self.n * len(cols)
         miss = sum(p["missing"] for p in profiles)
@@ -344,6 +346,11 @@ class TableProfiler:
             "numeric": None, "datetime": None, "text": None, "boolean": None,
             "histogram": None, "top_values": [], "top_approx": False, "flags": [], "notes": [],
         }
+        src = (getattr(self.t, "derived", None) or {}).get(c["name"])
+        if src:
+            p["derived_from"] = src
+            p["notes"].append(msg("Normalised copy of column '{c}' with merged cells filled in.", c=src))
+        p["sample"] = self._sample(c)
         if d.get("note"):
             p["notes"].append(msg(d["note"], **d.get("note_p", {})))
         if d.get("units"):
@@ -415,7 +422,103 @@ class TableProfiler:
         m = UNIT_HEADER_RE.search(c["name"])
         if m:
             p["notes"].append(msg("The column name mentions a unit or scale: '{u}'.", u=m.group(0).strip()))
+        if p.get("sample") is not None and p["inferred_type"] in ("categorical", "text") and p["distinct"] > 10:
+            p["sample"]["rare"] = self._rare_values(c, p)
+        p["issue_rows"] = self._issue_rows(c, d, p)
         return p
+
+    @contextlib.contextmanager
+    def _ordered(self):
+        """Row order matters for head / tail / row numbers; the profiling scans do not need it."""
+        self.con.execute("SET preserve_insertion_order=true")
+        try:
+            yield
+        finally:
+            self.con.execute("SET preserve_insertion_order=false")
+
+    def _sample(self, c, k=10) -> dict | None:
+        """First and last k rows of the column exactly as stored (empty cells included, with row
+        numbers), plus k values picked at random from the non-empty ones."""
+        x = f"CAST({ident(c['name'])} AS VARCHAR)"
+        clip = lambda v: None if v is None else (v if len(v) <= 80 else v[:79] + "…")  # noqa: E731
+        try:
+            with self._ordered():
+                head = self.q(f"SELECT {x} FROM b LIMIT {k}")
+                tail_from = max(len(head), self.n - k)
+                tail = self.q(f"SELECT {x} FROM b LIMIT {k} OFFSET {tail_from}") if self.n > len(head) else []
+            rnd = self.q(f"SELECT v FROM (SELECT {x} v FROM s WHERE NOT {self.nullish(c)}) "
+                         f"USING SAMPLE reservoir({k} ROWS) REPEATABLE (7)") if self.n > 2 * k else []
+        except Exception:
+            return None
+        return {"head": [[i + 1, clip(v)] for i, (v,) in enumerate(head)],
+                "tail": [[tail_from + i + 1, clip(v)] for i, (v,) in enumerate(tail)],
+                "random": [clip(v) for (v,) in rnd]}
+
+    def _rare_values(self, c, p, k=10) -> list:
+        """Least frequent values (sample): typos and one-off spellings hide here."""
+        try:
+            return [[v, n] for v, n in self.q(
+                f"SELECT trim(CAST({ident(c['name'])} AS VARCHAR)) v, count(*) n FROM s WHERE NOT {self.nullish(c)} "
+                f"GROUP BY 1 HAVING count(*) <= 2 ORDER BY 2, 1 LIMIT {k}")]
+        except Exception:
+            return []
+
+    ISSUE_COND = {   # flag code -> SQL condition on the raw text column
+        "null_tokens": "{nl} AND {x} IS NOT NULL AND trim({x}) <> ''",
+        "whitespace": "{x} <> trim({x}) AND trim({x}) <> ''",
+        "invisible_chars": "regexp_matches({x}, {inv})",
+        "mojibake": "regexp_matches({x}, {moj})",
+        "line_breaks": "contains({x}, chr(10)) OR contains({x}, chr(13))",
+    }
+
+    def _issue_rows(self, c, d, p, k=5) -> dict:
+        """For each flagged issue, the first rows (row number in the cleaned table + the raw value)."""
+        x, out = ident(c["name"]), {}
+        conds = {}
+        codes = {f["code"] for f in p["flags"]}
+        if c["kind"] == "str":
+            for code, tpl in self.ISSUE_COND.items():
+                if code in codes:
+                    conds[code] = tpl.format(x=x, nl=self.nullish(c), inv=lit(INVISIBLE_SQL), moj=lit(MOJIBAKE_SQL))
+        if "mixed_type" in codes and d.get("expr") and d["type"] in ("numeric", "datetime"):
+            conds["mixed_type"] = f"NOT {self.nullish(c)} AND ({d['expr']}) IS NULL"
+        if not conds:
+            return out
+        try:
+            with self._ordered():
+                for code, cond in conds.items():
+                    rows = self.q(f"SELECT rn, CAST({x} AS VARCHAR) FROM (SELECT row_number() OVER () AS rn, {x} FROM b) "
+                                  f"WHERE {cond} ORDER BY rn LIMIT {k}")
+                    if rows:
+                        out[code] = [[rn, v if v is None or len(v) <= 80 else v[:79] + "…"] for rn, v in rows]
+        except Exception:
+            pass
+        return out
+
+    def _missing_patterns(self, cols) -> dict | None:
+        """Which columns are empty together: the most common combinations of empty columns, and pairs
+        that are (almost) always empty on the same rows (structural blanks rather than random ones)."""
+        cand = sorted((c for c in cols if 0 < c["missing"] < self.n), key=lambda c: -c["missing"])[:12]
+        if len(cand) < 2:
+            return None
+        try:
+            nls = [self.nullish(c) for c in cand]
+            bits = ", ".join(f"CASE WHEN {nl} THEN '1' ELSE '0' END" for nl in nls)
+            pats = self.q(f"SELECT concat({bits}) p, count(*) n FROM b GROUP BY 1 ORDER BY 2 DESC LIMIT 8")
+            pairs = [(i, j) for i in range(len(cand)) for j in range(i + 1, len(cand))]
+            r = self.q1("SELECT " + ", ".join(
+                f"count(*) FILTER (WHERE {nls[i]} AND {nls[j]}), count(*) FILTER (WHERE {nls[i]} OR {nls[j]})"
+                for i, j in pairs) + " FROM b")
+        except Exception:
+            return None
+        together = []
+        for k, (i, j) in enumerate(pairs):
+            both, either = r[2 * k], r[2 * k + 1]
+            if either and both / either >= 0.9 and both >= 2:
+                together.append([cand[i]["name"], cand[j]["name"], _pct(both, either)])
+        together.sort(key=lambda t: -t[2])
+        return {"cols": [c["name"] for c in cand], "patterns": [[b, n, _pct(n, self.n)] for b, n in pats],
+                "together": together[:6]}
 
     def _top(self, c, expr_sql=None, k=10, use_sample=False):
         x = ident(c["name"])

@@ -90,6 +90,13 @@ def run(path: str | Path, out_html: Path, *, job_id: str = "cli", engine: str | 
         if llm is not None:
             llm.lessons = memory.prompt_block(skills)
 
+        # the cleaned tables stay downloadable (CSV / Parquet) after the work folder is gone
+        if not use_spark:
+            try:
+                _export(tables, out_html)
+            except Exception as e:
+                warnings.append(f"Cleaned data not exported: {type(e).__name__}: {e}")
+
         # 2. profile -----------------------------------------------------
         results = []
         for i, t in enumerate(tables):
@@ -149,6 +156,23 @@ def run(path: str | Path, out_html: Path, *, job_id: str = "cli", engine: str | 
     finally:
         if not keep_work:
             shutil.rmtree(work, ignore_errors=True)
+
+
+def _export(tables, out_html: Path):
+    """Write each table (original columns + any '(filled)' companions) as Parquet next to the report."""
+    from .duck import connect, ident, lit, parquet_src
+    d = out_html.with_name(out_html.stem + "_data")
+    shutil.rmtree(d, ignore_errors=True)
+    d.mkdir(parents=True, exist_ok=True)
+    con = connect()
+    try:
+        con.execute("SET preserve_insertion_order=true")
+        for i, t in enumerate(tables):
+            cols = ", ".join(ident(c) for c in t.columns)
+            con.execute(f"COPY (SELECT {cols} FROM {parquet_src([t.path] + list(t.extra_paths))}) "
+                        f"TO {lit((d / f'table{i}.parquet').as_posix())} (FORMAT parquet, COMPRESSION zstd)")
+    finally:
+        con.close()
 
 
 def _features(res: dict):

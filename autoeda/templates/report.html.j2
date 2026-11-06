@@ -116,6 +116,15 @@ table.desc { border-collapse: separate; border-spacing: 0; width: 100%; backgrou
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .kv td { padding: 4px 6px; border: 0; font-size: 14px; }
 .kv td:first-child { color: var(--muted); }
+.smp { margin-top: 10px; }
+.chips code { display: inline-block; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; margin: 0 4px 4px 0; }
+.irows { margin: 6px 0; font-size: 13px; }
+.mp td, .mp th { text-align: center; font-size: 13px; padding: 3px 6px; }
+.mp .on { color: var(--warn, #c0392b); font-weight: 700; }
+.mp .off { color: var(--muted); }
+.mp th.v { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; max-height: 150px; overflow: hidden; text-overflow: ellipsis; }
+.smp-t td:first-child { width: 48px; text-align: right; }
+.smp-t td:last-child { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .col-issues { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
 .col-issues > b { display: block; margin-bottom: 8px; color: var(--strong); }
 svg.hist { width: 100%; height: 110px; display: block; }
@@ -198,6 +207,8 @@ footer.foot { color: var(--muted); font-size: 13px; text-align: center; padding:
     </div>
     <div>{{ i.text }}</div>
     {% if i.ex %}<div class="ex">{{ U.examples }}: {% for e in i.ex[:3] %}<code>{{ e[0] }}</code>{% if e[1] is string %} → <code>{{ e[1] }}</code>{% elif e[1] is number %} ×{{ e[1] | num(lang) }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</div>{% endif %}
+    {% if i.rows %}<details class="irows"><summary>{{ U.issue_rows }} ({{ i.rows | length }})</summary>
+      <table class="kv smp-t">{% for rn, v in i.rows %}<tr><td class="num">{{ rn | num(lang) }}</td><td title="{{ v if v is not none else '' }}"><code>{{ v if v is not none else '' }}</code></td></tr>{% endfor %}</table></details>{% endif %}
     {% if i.why or i.todo %}<div class="grid2">{% if i.why %}<div><span>{{ U.why }}</span>{{ i.why }}</div>{% endif %}{% if i.todo %}<div><span>{{ U.todo }}</span>👉 {{ i.todo }}</div>{% endif %}</div>{% endif %}
   </div>
 {% endmacro %}
@@ -207,7 +218,7 @@ footer.foot { color: var(--muted); font-size: 13px; text-align: center; padding:
 {% macro col_card(c, ti, lang) %}{% set U = UI[lang] %}{% set filled = c.count - c.missing %}
   <article class="col" id="card-{{ ti }}_{{ c.index }}-{{ lang }}" data-title="{{ c.name }}">
     <div class="col-head">
-      <div><h3>{{ c.name }}</h3>{% if c.ai_name %}<div class="sub">🤖 {{ U.ai_suggests }}: <b>{{ c.ai_name }}</b></div>{% endif %}</div>
+      <div><h3>{{ c.name }}</h3>{% if c.derived_from %}<div class="sub">↳ {{ U.derived_from }} <b>{{ c.derived_from }}</b></div>{% endif %}{% if c.ai_name %}<div class="sub">🤖 {{ U.ai_suggests }}: <b>{{ c.ai_name }}</b></div>{% endif %}</div>
       <div class="tags"><span class="tag is-link is-light">{{ type_label(c.inferred_type, lang) }}</span>{% if c.semantic %}<span class="tag is-info is-light">{{ sem_label(c.semantic, lang) }}</span>{% endif %}
         {% set nw = c.flags | selectattr('level', 'equalto', 'warn') | list | length %}
         {% if nw %}<span class="tag is-danger">⚠ {{ U.iss_count.format(n=nw) }}</span>{% elif c.flags %}<span class="tag is-info is-light">ℹ {{ c.flags | length }}</span>{% else %}<span class="tag is-success is-light">✓</span>{% endif %}</div>
@@ -255,12 +266,30 @@ footer.foot { color: var(--muted); font-size: 13px; text-align: center; padding:
         {% endif %}
       </div>
     </div>
+    {% if c.sample and (c.sample.head or c.sample.tail) %}
+    <details class="smp" open><summary>{{ U.sample }}</summary>
+      <div class="two">
+        {% for key, title in (('head', U.sample_head), ('tail', U.sample_tail)) %}{% if c.sample[key] %}
+        <div><div class="sub">{{ title }}</div>
+          <table class="kv smp-t">{% for rn, v in c.sample[key] %}
+            <tr><td class="num">{{ rn | num(lang) }}</td><td title="{{ v if v is not none else '' }}">{% if v is none or not v.strip() %}<span class="sub">{{ U.empty_cell }}</span>{% else %}{{ v }}{% endif %}</td></tr>
+          {% endfor %}</table></div>
+        {% endif %}{% endfor %}
+      </div>
+      {% if c.sample.random or c.sample.rare %}<div class="two" style="margin-top:8px">
+        {% for key, title in (('random', U.sample_random), ('rare', U.sample_rare)) %}{% if c.sample[key] %}
+        <div><div class="sub">{{ title }}</div><div class="chips">
+          {% for it in c.sample[key] %}{% set v = it[0] if it is not string else it %}<code title="{{ v }}">{% if v is none or not v.strip() %}{{ U.empty_cell }}{% else %}{{ v }}{% endif %}</code> {% endfor %}
+        </div></div>{% endif %}{% endfor %}
+      </div>{% endif %}
+    </details>
+    {% endif %}
     <div class="col-issues">
     {% if c.flags %}
       <b>{{ U.issues }} ({{ c.flags | length }})</b>
       {% for f in (c.flags | sort(attribute='level', reverse=True)) %}{% set fi = flag_info(f.code, lang) %}
         {{ issue_card(dict(level=f.level, title=fi.title, ai=f.ai, col=None, idx=None, text=(f.m or f.msg) | tr(lang),
-                           ex=f.examples or [], why=fi.why, todo=fi.todo), ti, lang, False) }}
+                           ex=f.examples or [], rows=(c.issue_rows or {}).get(f.code), why=fi.why, todo=fi.todo), ti, lang, False) }}
       {% endfor %}
     {% else %}<div class="sub">✅ {{ U.no_issues }}</div>{% endif %}
     </div>
@@ -314,6 +343,7 @@ footer.foot { color: var(--muted); font-size: 13px; text-align: center; padding:
   <div class="tblock-head">
     {% if NT > 1 %}<span class="tag is-link is-medium">{{ U.table_n.format(i=ti + 1, n=NT) }}</span>{% endif %}
     <span class="tname">{{ t.name }}</span>
+    <span class="fb-only no-print" style="margin-left:auto"><a class="button is-small" href="/reports/{{ r.report_id }}/data/{{ ti }}?fmt=csv" download>⬇ CSV</a> <a class="button is-small" href="/reports/{{ r.report_id }}/data/{{ ti }}?fmt=parquet" download>⬇ Parquet</a></span>
     <span class="tmeta">{{ where(t, U) }}{% if where(t, U) | trim %} · {% endif %}{{ t.n_rows | num(lang) }} {{ U.rows }} · {{ t.n_cols }} {{ U.cols }}</span>
   </div>
   <div class="tblock-body">
@@ -365,6 +395,20 @@ footer.foot { color: var(--muted); font-size: 13px; text-align: center; padding:
   {% if rest | length > 15 %}<p class="sub">+ {{ rest | length - 15 }} … ({{ U.columns_title }})</p>{% endif %}
 </section>
 {% elif ti == 0 %}<span id="tour-check-{{ lang }}"></span>{% endif %}
+
+{% if t.missing_patterns and Fq %}{% set mp = t.missing_patterns %}
+<section class="box">
+  <h2 class="title is-5">🕳️ {{ U.mp_title }}</h2>
+  <p class="sub">{{ U.mp_hint }}</p>
+  <div class="scroll"><table class="table is-narrow mp">
+    <thead><tr><th class="num">%</th><th class="num">{{ U.rows }}</th>{% for cn in mp.cols %}<th class="v" title="{{ cn }}">{{ cn }}</th>{% endfor %}</tr></thead>
+    <tbody>{% for bits, k, pc in mp.patterns %}<tr><td class="num">{{ pc | round(1) | num(lang) }}</td><td class="num">{{ k | num(lang) }}</td>
+      {% for ch in bits %}<td class="{{ 'on' if ch == '1' else 'off' }}">{{ '●' if ch == '1' else '·' }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+  </table></div>
+  {% if mp.together %}<p class="sub" style="margin-top:8px"><b>{{ U.mp_together }}:</b>
+    {% for a, b2, pc in mp.together %}<code>{{ a }}</code> + <code>{{ b2 }}</code> ({{ pc | round(0) | num(lang) }}%){% if not loop.last %}; {% endif %}{% endfor %}</p>{% endif %}
+</section>
+{% endif %}
 
 {% if Fdesc or Funi %}
 <section class="box" {% if ti == 0 %}id="tour-columns-{{ lang }}"{% endif %}>
@@ -432,6 +476,7 @@ footer.foot { color: var(--muted); font-size: 13px; text-align: center; padding:
   <div class="scroll"><table class="table is-fullwidth is-narrow">
     {% for it in t.repairs['items'] %}
     <tr><td>{{ repair_label(it.kind, lang) }}</td><td class="num">{{ it.count | num(lang) }}×</td><td>
+      {% if it.lines %}<div class="sub">{{ U.repair_rows }}: {{ it.lines | join(', ') }}{% if it.count > it.lines | length %} …{% endif %}</div>{% endif %}
       {% if it.examples %}<details><summary>{{ U.show_examples }}</summary>
       {% for e in it.examples %}<div style="margin:6px 0;font-size:13px">{% if e.line %}{{ U.line }} {{ e.line }}: {% endif %}{% if e.before %}<code>{{ e.before }}</code>{% endif %}{% if e.after %} → <code>{{ e.after }}</code>{% endif %}{% if e.detail and not e.before %}<span class="sub">{{ e.detail }}</span>{% endif %}</div>{% endfor %}
       </details>{% endif %}

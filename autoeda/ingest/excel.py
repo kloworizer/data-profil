@@ -7,7 +7,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from ..models import RepairLog
-from .grid import grid_to_table, grid_to_tables
+from .grid import FilledStr, cell_str, grid_to_table, grid_to_tables
 from .structure import StructureAI
 
 # Sheets up to this many cells are materialised: enables multi-table detection
@@ -44,13 +44,14 @@ def _filled_rows(rows, merges, r_off: int, c_off: int, log: RepairLog, labels: d
                 continue
             log.add("merged_cells_filled", r + r_off + 1, f"rows {r + r_off + 1}-{r2 + r_off + 1}, "
                                                           f"cols {c1 + c_off + 1}-{c2 + c_off + 1}")
-            active.append((r2, c1, c2, v))
+            active.append((r2, c1, c2, v, r))
         if active:
-            for r2, c1, c2, v in active:
+            for r2, c1, c2, v, r0 in active:
                 if c2 >= len(row):
                     row.extend([""] * (c2 + 1 - len(row)))
                 for c in range(max(c1, 0), c2 + 1):
-                    row[c] = v
+                    # the cell that holds the value stays as is; every other cell is marked as a copy
+                    row[c] = v if (r == r0 and c == c1) else FilledStr(cell_str(v))
             active = [a for a in active if a[0] > r]
         yield row
 
