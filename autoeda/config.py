@@ -15,6 +15,11 @@ def _int(name: str, default: int) -> int:
         return default
 
 
+def _on(name: str, default: bool = True) -> bool:
+    """Boolean from the environment: 0/false/no/off turn it off, anything else on."""
+    return os.getenv(name, "1" if default else "0").lower() not in ("0", "false", "no", "off")
+
+
 DATA_DIR = Path(os.getenv("AUTOEDA_DATA_DIR", "./data")).resolve()
 UPLOAD_DIR = DATA_DIR / "uploads"
 WORK_DIR = DATA_DIR / "work"
@@ -77,10 +82,6 @@ PDF_ENGINE = os.getenv("AUTOEDA_PDF_ENGINE", "auto")
 DOCLING_MODELS = Path(os.getenv("AUTOEDA_DOCLING_MODELS", Path(__file__).resolve().parent.parent / "models" / "docling"))
 DOCLING_MAX_PAGES = _int("AUTOEDA_DOCLING_MAX_PAGES", 60)   # per file: Docling takes seconds per page on CPU
 OCR_LANG = os.getenv("AUTOEDA_OCR_LANG", "eng")
-
-
-def _on(name: str, default: bool = True) -> bool:
-    return os.getenv(name, "1" if default else "0").lower() not in ("0", "false", "no", "off")
 
 
 # EDA features (the Settings page switches them; settings.py)
