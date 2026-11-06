@@ -344,8 +344,10 @@ class SparkProfiler(TableProfiler):
         v = f"trim({x})"
         t = ", ".join(slit(s) for s in TRUE_TOKENS)
         f = ", ".join(slit(s) for s in FALSE_TOKENS)
-        neg = (f"(CASE WHEN {v} RLIKE {slit(r'^\s*[^0-9]*\(.*\)\s*[*†‡¹²³]?$')} OR {v} RLIKE {slit('^[^0-9]*-')} "
-               f"OR {v} RLIKE {slit(r'[0-9]\s*-\s*$')} THEN -1 ELSE 1 END)")
+        p_paren = slit(r'^\s*[^0-9]*\(.*\)\s*[*†‡¹²³]?$')
+        p_trail = slit(r'[0-9]\s*-\s*$')
+        neg = (f"(CASE WHEN {v} RLIKE {p_paren} OR {v} RLIKE {slit('^[^0-9]*-')} "
+               f"OR {v} RLIKE {p_trail} THEN -1 ELSE 1 END)")
         return {
             "num_native": f"CAST({x} AS DOUBLE)",
             "bool_native": x,

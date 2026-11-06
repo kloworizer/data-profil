@@ -8,3 +8,4 @@ python-calamine>=0.3
 pdfplumber>=0.11
 charset-normalizer>=3.3
 httpx>=0.27
+pypdf>=4.0

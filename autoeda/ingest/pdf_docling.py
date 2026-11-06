@@ -12,7 +12,10 @@ downloaded at runtime.
 """
 from __future__ import annotations
 
+import hashlib
 import os
+import pickle
+import tempfile
 import threading
 from pathlib import Path
 
@@ -41,17 +44,77 @@ def _converter():
             from docling.datamodel.pipeline_options import PdfPipelineOptions, TableFormerMode
             from docling.document_converter import DocumentConverter, PdfFormatOption
 
+            from docling.datamodel.accelerator_options import AcceleratorDevice, AcceleratorOptions
+
             o = PdfPipelineOptions(do_ocr=False, do_table_structure=True, artifacts_path=str(config.DOCLING_MODELS))
-            o.table_structure_options.mode = TableFormerMode.ACCURATE
+            o.accelerator_options = AcceleratorOptions(num_threads=max(1, config.DOCLING_THREADS),
+                                                       device=AcceleratorDevice.CPU)
+            o.table_structure_options.mode = (TableFormerMode.FAST if config.DOCLING_MODE == "fast"
+                                              else TableFormerMode.ACCURATE)
             o.table_structure_options.do_cell_matching = True     # cell text from the PDF text layer
             _conv = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=o)})
         return _conv
 
 
-def page_tables(path: Path, pi: int, make_table) -> list:
+def _file_key(path: Path) -> str:
+    h = hashlib.sha1(config.DOCLING_MODE.encode())
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _one_page_pdf(path: Path, pi: int, tmp: str) -> str | None:
+    """A PDF holding only page pi: the converter then parses one page instead of the whole file
+    (a 19 MB report was re-read for every page). None when pypdf is missing or fails."""
+    try:
+        from pypdf import PdfReader, PdfWriter
+        w = PdfWriter()
+        w.add_page(PdfReader(str(path)).pages[pi])
+        out = os.path.join(tmp, f"p{pi}.pdf")
+        with open(out, "wb") as f:
+            w.write(f)
+        return out
+    except Exception:
+        return None
+
+
+def page_raw(path, pi: int, key: str | None = None) -> list[dict]:
+    """Tables on page pi as plain dicts (picklable, so a worker process can return them).
+    Cached on disk by file content."""
+    path = Path(path)
+    cache = None
+    if config.DOCLING_CACHE:
+        try:
+            key = key or _file_key(path)
+            cache = config.DATA_DIR / "cache" / "docling" / key[:2] / f"{key}_{pi}.pkl"
+            if cache.is_file():
+                return pickle.loads(cache.read_bytes())
+        except Exception:
+            cache = None
+    with tempfile.TemporaryDirectory() as tmp:
+        one = _one_page_pdf(path, pi, tmp)
+        src, rng = (one, (1, 1)) if one else (str(path), (pi + 1, pi + 1))
+        res = _converter().convert(src, page_range=rng, raises_on_error=False)
+        out = _extract(res)
+    if cache is not None:
+        try:
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            cache.write_bytes(pickle.dumps(out))
+        except Exception:
+            pass
+    return out
+
+
+def page_tables(path: Path, pi: int, make_table, raw: list[dict] | None = None) -> list:
     """Tables on page pi (0-based) as PageTable objects (built by make_table(grid,
-    origin, cols, header_rows, sections))."""
-    res = _converter().convert(str(path), page_range=(pi + 1, pi + 1), raises_on_error=False)
+    origin, cols, header_rows, sections)). `raw` = a reading prefetched by a worker."""
+    if raw is None:
+        raw = page_raw(path, pi)
+    return [make_table(t["grid"], t["origin"], t["cols"], t["header_rows"], t["sections"]) for t in raw]
+
+
+def _extract(res) -> list[dict]:
     doc = getattr(res, "document", None)
     out = []
     for tb in (doc.tables if doc is not None else []):
@@ -86,8 +149,8 @@ def page_tables(path: Path, pi: int, make_table) -> list:
         header_rows = 0
         while header_rows in heads:
             header_rows += 1
-        cols = _columns(x0s, x1s, d.num_cols, tb)
-        out.append(make_table(grid, origin, cols, header_rows, sections))
+        out.append({"grid": grid, "origin": origin, "cols": _columns(x0s, x1s, d.num_cols, tb),
+                    "header_rows": header_rows, "sections": sections})
     return out
 
 

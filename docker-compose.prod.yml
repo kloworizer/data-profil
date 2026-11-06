@@ -65,7 +65,19 @@ services:
       # and mount /etc/krb5.conf and the keytab (volumes below). WebHDFS browsing then needs HttpFS / Knox.
       # local DuckDB engine (Excel / PDF / XML / SQLite, or when chosen in the UI) on one big node
       AUTOEDA_MEMORY_LIMIT: 72GB
-      AUTOEDA_THREADS: "16"
+      AUTOEDA_THREADS: "32"
+      # PDF table model (Docling/TableFormer, PyTorch on CPU). Pages are read by DOCLING_WORKERS
+      # parallel processes of DOCLING_THREADS torch threads each (6 x 4 = 24 cores), each page's reading
+      # is cached on /data by file content, and FAST mode is ~2-3x quicker than ACCURATE (set
+      # "accurate" if table cells come out worse).
+      AUTOEDA_DOCLING_WORKERS: "6"
+      AUTOEDA_DOCLING_THREADS: "4"
+      AUTOEDA_DOCLING_MODE: fast
+      AUTOEDA_DOCLING_MAX_PAGES: "120"
+      OMP_NUM_THREADS: "4"
+      # Small model for the yes/no layout questions; the 35B keeps the page-image call. Must be in the bundle.
+      AUTOEDA_LLM_FAST_MODEL: qwen3.5:2b
+      AUTOEDA_VISION_DPI: "100"
       AUTOEDA_MAX_JOBS: "2"
       AUTOEDA_LLM_BATCH: "8"
       AUTOEDA_LLM_TIMEOUT: "600"      # CPU inference: a page image or a long batch can take minutes
@@ -78,7 +90,7 @@ services:
       # logical core of the container (72 here) -> threads straddle the two sockets and run slower.
       # Use the physical cores of ONE socket (Xeon Gold 6140: 18). 0 = let Ollama decide.
       # Also on Settings -> CPU threads per AI call.
-      OLLAMA_NUM_THREAD: "12"
+      OLLAMA_NUM_THREAD: "18"
       # Keep the loaded model resident between jobs (22 GB; loading takes minutes). Also sent per request.
       OLLAMA_KEEP_ALIVE: 4h
       AUTOEDA_MEMORY_DIR: /memory
@@ -109,14 +121,17 @@ services:
     # "cannot set cpuset: no cgroup v2 support" - comment the line out there and rely on
     # OLLAMA_NUM_THREADS alone (the cpuset only reinforces that limit: llama.cpp creates
     # OLLAMA_NUM_THREADS threads whatever the container sees).
-    cpuset: "0-11"
+    # Topology of this host (lscpu -e): socket 0 = EVEN cpu ids, socket 1 = ODD ids, and ids 36-71 are
+    # the hyper-thread siblings of 0-35. So "0-11" straddled both sockets (6 cores) and "36-71" is
+    # hyper-threads, not a socket. Socket 0's 18 physical cores (one thread each) are the even ids 0-34.
+    cpuset: "0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34"
     environment:
       OLLAMA_HOST: 127.0.0.1:11434
       # NOTE: current Ollama (llama-server based) does NOT apply this to inference threads; it starts
       # one thread per logical core it sees. The app limits threads per request instead:
       # OLLAMA_NUM_THREAD on the autoeda service (model option num_thread). Keep this only as a
       # sane default for direct `ollama run` use.
-      OLLAMA_NUM_THREADS: "12"
+      OLLAMA_NUM_THREADS: "18"
       # Model load has its own timeout, separate from the HTTP request: with `ollama run` / `curl`
       # the client gives up first and the load is aborted ("context canceled"). 35B on CPU takes
       # minutes; 15m leaves room. After the first load the model stays resident.
@@ -124,6 +139,8 @@ services:
       OLLAMA_KEEP_ALIVE: 4h          # keep the model loaded between jobs (reloading takes a while)
       # Air-gapped: stop Ollama trying to reach ollama.com for recommendations
       OLLAMA_NO_CLOUD: "1"
+      OLLAMA_FLASH_ATTENTION: "1"     # less memory traffic per token on CPU
+      OLLAMA_KV_CACHE_TYPE: q8_0      # half-size KV cache (needs flash attention)
       OLLAMA_NUM_PARALLEL: "1"        # = AUTOEDA_MAX_JOBS
       OLLAMA_MAX_LOADED_MODELS: "2"   # 35b-a3b and 2b side by side (RAM is plentiful)
     volumes:

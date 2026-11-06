@@ -81,6 +81,14 @@ MAX_CONCURRENT_JOBS =_int("AUTOEDA_MAX_JOBS", 1)
 PDF_ENGINE = os.getenv("AUTOEDA_PDF_ENGINE", "auto")
 DOCLING_MODELS = Path(os.getenv("AUTOEDA_DOCLING_MODELS", Path(__file__).resolve().parent.parent / "models" / "docling"))
 DOCLING_MAX_PAGES = _int("AUTOEDA_DOCLING_MAX_PAGES", 60)   # per file: Docling takes seconds per page on CPU
+DOCLING_WORKERS = _int("AUTOEDA_DOCLING_WORKERS", 1)    # processes reading pages with the table model in parallel
+DOCLING_CACHE = _on("AUTOEDA_DOCLING_CACHE")             # keep each page's reading, keyed by file content
+VISION_DPI = _int("AUTOEDA_VISION_DPI", 110)             # page image resolution sent to the vision model
+# Small model for the yes/no layout questions (repeated header? same table? which reading?); the main
+# model keeps the vision call. Empty = use the main model for everything.
+LLM_FAST_MODEL = os.getenv("AUTOEDA_LLM_FAST_MODEL", "")
+DOCLING_THREADS = _int("AUTOEDA_DOCLING_THREADS", 8)    # torch threads per page (Docling default is 4)
+DOCLING_MODE = os.getenv("AUTOEDA_DOCLING_MODE", "accurate").lower()   # accurate | fast
 OCR_LANG = os.getenv("AUTOEDA_OCR_LANG", "eng")
 
 

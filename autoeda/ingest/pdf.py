@@ -25,7 +25,9 @@ from __future__ import annotations
 import math
 import os
 import re
+import time
 from collections import Counter
+from contextlib import contextmanager
 from pathlib import Path
 
 from .. import cancel, config
@@ -345,7 +347,62 @@ def _close(a: list[dict], b: list[dict], factor: float) -> bool:
     return b[0]["top"] - a[0]["bottom"] <= factor * h
 
 
-def _docling_tables(path: Path, pi: int) -> list[PageTable]:
+@contextmanager
+def _timed(tm: Counter, name: str):
+    t = time.perf_counter()
+    try:
+        yield
+    finally:
+        tm[name] += time.perf_counter() - t
+
+
+@contextmanager
+def _shutdown_on_exit(box: list):
+    """Stop the worker pool (and drop pages not started) however the page loop ends: done, error, cancel."""
+    try:
+        yield
+    finally:
+        for ex in box:
+            ex.shutdown(wait=False, cancel_futures=True)
+
+
+def _prefetch_model(path: Path, pdf, engine: str, n_pages: int, tm: Counter):
+    """Start the table model on every page that will need it, in worker processes, so the pages
+    are read in parallel while the main loop (cheap geometry, stitching) follows behind.
+    Returns (executor, {page: future}); (None, {}) when workers = 1 or nothing qualifies."""
+    from concurrent.futures import ProcessPoolExecutor
+    import multiprocessing
+
+    from . import pdf_docling
+
+    if config.DOCLING_WORKERS <= 1:
+        return None, {}
+    with _timed(tm, "prefetch scan"):
+        cands = []
+        for pi, raw in enumerate(pdf.pages):
+            if len(cands) >= config.DOCLING_MAX_PAGES:
+                break
+            page = raw.dedupe_chars().filter(_not_watermark)
+            if engine != "docling" and page.find_tables():
+                raw.flush_cache()
+                continue     # ruled tables: the geometry reader handles it
+            if engine == "docling" or _numeric_page(page) or any(
+                    _looks_tabular([t.row(r, 0) for r in range(len(t.grid))]) for t in _stream_tables(page, pi)):
+                cands.append(pi)
+            raw.flush_cache()
+            cancel.check()
+    if len(cands) < 2:
+        return None, {}
+    try:
+        key = pdf_docling._file_key(path) if config.DOCLING_CACHE else None
+        ex = ProcessPoolExecutor(max_workers=min(config.DOCLING_WORKERS, len(cands)),
+                                 mp_context=multiprocessing.get_context("spawn"))
+        return ex, {pi: ex.submit(pdf_docling.page_raw, str(path), pi, key) for pi in cands}
+    except Exception:
+        return None, {}
+
+
+def _docling_tables(path: Path, pi: int, raw=None) -> list[PageTable]:
     from . import pdf_docling
 
     def make(grid, origin, cols, header_rows, sections):
@@ -354,7 +411,7 @@ def _docling_tables(path: Path, pi: int) -> list[PageTable]:
         _mark_labels(pt)
         pt.labels |= {r for r in sections if r >= header_rows}
         return pt
-    return pdf_docling.page_tables(path, pi, make)
+    return pdf_docling.page_tables(path, pi, make, raw)
 
 
 def _lines_of(words: list[dict]) -> list[list[dict]]:
@@ -418,7 +475,7 @@ def _vision_table(page, pi: int, ai: StructureAI, log: RepairLog) -> PageTable |
 
     words = page.extract_words()
     buf = io.BytesIO()
-    page.to_image(resolution=110).original.save(buf, "PNG")
+    page.to_image(resolution=config.VISION_DPI).original.save(buf, "PNG")
     lay = ai.vision_layout(base64.b64encode(buf.getvalue()).decode(), {w["text"] for w in words})
     if not lay:
         return None
@@ -866,6 +923,8 @@ def ingest_pdf(path: Path, work_dir: Path, name: str, progress=lambda p, m: None
     model_pages = 0
     reader_used = Counter()
     prev_above: list[str] | None = None
+    tm: Counter = Counter()
+    pool, futures = None, {}
     try:
         pdf = pdfplumber.open(str(path))
     except Exception as e:
@@ -873,15 +932,22 @@ def ingest_pdf(path: Path, work_dir: Path, name: str, progress=lambda p, m: None
         if "password" in why or "encrypt" in why:
             raise ValueError("PDF is password-protected; remove the password and retry.")
         raise ValueError(f"Could not open PDF ({type(e).__name__}: {str(e)[:200]}).")
-    with pdf:
+    pool_box: list = []
+    with pdf, _shutdown_on_exit(pool_box):
         n_pages = len(pdf.pages)
+        if use_model:
+            progress(0.05, "Starting the table model on the unclear pages")
+            pool, futures = _prefetch_model(path, pdf, engine, n_pages, tm)
+            if pool is not None:
+                pool_box.append(pool)
         for pi, raw in enumerate(pdf.pages):
             progress(0.05 + 0.4 * pi / max(1, n_pages), f"Reading PDF page {pi + 1}/{n_pages}")
             # 'bold' printed as the same glyph twice, slightly offset; diagonal watermark text
             page = raw.dedupe_chars().filter(_not_watermark)
-            found = [] if engine == "docling" else [t for t in (_trim(t, slog) for t in _page_tables(page, pi)) if t]
-            if found:
-                found = _better_than_rules(found, page, pi, slog)
+            with _timed(tm, "geometry"):
+                found = [] if engine == "docling" else [t for t in (_trim(t, slog) for t in _page_tables(page, pi)) if t]
+                if found:
+                    found = _better_than_rules(found, page, pi, slog)
             last = groups[-1] if groups else None
             running = last.first.vlines if last and last.last_page == pi - 1 else None
             if not found and running:
@@ -899,7 +965,10 @@ def ingest_pdf(path: Path, work_dir: Path, name: str, progress=lambda p, m: None
                     model_pages += 1
                     progress(0.05 + 0.4 * pi / max(1, n_pages), f"Reading table structure on page {pi + 1}/{n_pages}")
                     try:
-                        alt = [t for t in (_trim(t, slog) for t in _docling_tables(path, pi)) if t]
+                        with _timed(tm, "table model"):
+                            fut = futures.pop(pi, None)
+                            raw_tables = fut.result() if fut is not None else None
+                            alt = [t for t in (_trim(t, slog) for t in _docling_tables(path, pi, raw_tables)) if t]
                     except Exception as e:  # the geometry reading stays
                         alt = []
                         slog.note("Table model failed on page {p}: {e}", p=pi + 1, e=f"{type(e).__name__}"[:80])
@@ -907,9 +976,12 @@ def ingest_pdf(path: Path, work_dir: Path, name: str, progress=lambda p, m: None
                     reader_used[chosen] += 1
                 # still unclear (no header on top, word fragments, glued values): the vision
                 # model looks at the page once to lay out the columns of this table
-                if (found or _numeric_page(page)) and _doubtful(found) and ai.enabled:
+                # a table the table model read well needs no second opinion from the (slow) vision model
+                sure = bool(found) and found[0].reader == "docling" and _score(found) >= 0.7
+                if (found or _numeric_page(page)) and not sure and _doubtful(found) and ai.enabled:
                     progress(0.05 + 0.4 * pi / max(1, n_pages), f"AI is reading the table layout on page {pi + 1}")
-                    vt = _vision_table(page, pi, ai, slog)
+                    with _timed(tm, "AI vision"):
+                        vt = _vision_table(page, pi, ai, slog)
                     # its cells were checked against the page text and its boundaries against every
                     # line it read, so it wins over a doubtful alignment guess
                     if vt is not None:
@@ -954,6 +1026,8 @@ def ingest_pdf(path: Path, work_dir: Path, name: str, progress=lambda p, m: None
             raw.flush_cache()
             cancel.check()
 
+    if tm:
+        slog.note("PDF read time: {t}.", t=", ".join(f"{k} {v:.0f}s" for k, v in tm.most_common()))
     if reader_used["docling"]:
         slog.note("{n} page(s) read with the TableFormer table-structure model (Docling).", n=reader_used["docling"])
     if reader_used["vision"]:

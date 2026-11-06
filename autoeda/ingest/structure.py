@@ -142,6 +142,20 @@ class StructureAI:
         self.llm = llm
         self.max_calls = max_calls
         self.calls = 0
+        self._fast = None
+
+    def _text_llm(self):
+        """The small model for text-only layout questions (config.LLM_FAST_MODEL) when it is
+        installed; otherwise the main model."""
+        from .. import config
+        name = config.LLM_FAST_MODEL
+        if not name or self.llm is None or name == getattr(self.llm, "model", None):
+            return self.llm
+        if self._fast is None:
+            from ..llm import Ollama
+            cand = Ollama(model=name, host=getattr(self.llm, "host", None))
+            self._fast = cand if cand.available() else self.llm
+        return self._fast
 
     @property
     def enabled(self) -> bool:
@@ -154,7 +168,7 @@ class StructureAI:
         self.calls += 1
         from ..llm import _parse_json
         try:
-            data = _parse_json(self.llm.chat(prompt, temperature=0))
+            data = _parse_json(self._text_llm().chat(prompt, temperature=0))
         except Exception:
             return None
         return data if isinstance(data, dict) else None
